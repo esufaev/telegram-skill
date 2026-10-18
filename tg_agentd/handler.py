@@ -19,6 +19,9 @@ from . import folders, media, permissions, verbs
 # Actions that are not permissions of their own, and the permission each one takes
 REQUIRES = {"topics": "read"}
 
+# The name a request may give the account's saved messages in place of their identifier
+SAVED = "saved"
+
 
 class ChatIsNotAForum(ValueError):
     """Topics were asked of a chat that keeps none."""
@@ -75,6 +78,12 @@ class Handler:
                 if getattr(folder, "id", None) is not None
             ]
             return _allowed(None, action, {"folders": listed})
+
+        # Saved messages are the account's chat with itself, so "saved" stands for the
+        # account's own identifier. The grant stays in the file named by that number
+        for key in ("chat", "to"):
+            if request.get(key) == SAVED:
+                request = {**request, key: await self._client.own_id()}
 
         # The target decides which vocabulary applies, not the word: "read" and "media"
         # appear in both tables and mean a different reach in each

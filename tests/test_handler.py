@@ -112,6 +112,33 @@ def test_forwarding_goes_through_when_both_ends_allow_it(ask, store, fake):
     ]
 
 
+def test_saved_names_the_accounts_own_chat(ask, store, fake):
+    # The fake account's identifier is 1, so its saved messages are the chat 1
+    grant(store, 1, "send")
+    answer = ask({"action": "send", "chat": "saved", "text": "note"})
+    assert answer["ok"] is True
+    assert fake.called("send_message") == [
+        {"entity": 1, "message": "note", "reply_to": None}
+    ]
+
+
+def test_saved_is_a_forward_destination_too(ask, store, fake):
+    grant(store, 777, "forward")
+    grant(store, 1, "send")
+    answer = ask({"action": "forward", "chat": 777, "to": "saved", "ids": [1]})
+    assert answer["ok"] is True
+    assert fake.called("forward_messages") == [
+        {"entity": 1, "messages": [1], "from_peer": 777}
+    ]
+
+
+def test_saved_is_decided_by_the_file_of_the_accounts_identifier(ask, fake):
+    answer = ask({"action": "send", "chat": "saved", "text": "note"})
+    assert answer["ok"] is False
+    assert "chat 1" in answer["remedy"]
+    assert not fake.called("send_message")
+
+
 def test_deleting_for_all_is_a_separate_grant(ask, store, fake):
     grant(store, 777, "delete")
     answer = ask({"action": "delete-for-all", "chat": 777, "ids": [1]})

@@ -2,6 +2,12 @@
 
 Kept in the shape of [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), dated rather than numbered, and with no `Unreleased` section — a skill is read at whatever revision you have checked out, so whatever is on the default branch is what everyone already has, and a section for work that has landed but not shipped would never close. The rule lives in the [versioning](https://github.com/rokokol/versioning-skill) skill, which owns what has no version
 
+## 2026-10-18
+
+### Added
+
+- `saved` names the account's saved messages wherever a request takes a chat: `--chat saved`, and `--to saved` for `forward`. The service puts the account's own identifier in its place, so the grant is still the permission file of that number
+
 ## 2026-09-30
 
 ### Added

@@ -34,9 +34,12 @@ def build_parser():
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     parser.add_argument("action", help="the action to ask for; 'permissions' lists what is held")
-    parser.add_argument("--chat", help="the chat identifier the action applies to")
+    parser.add_argument(
+        "--chat",
+        help="the chat identifier the action applies to; 'saved' is the account's saved messages",
+    )
     parser.add_argument("--folder", help="the folder identifier the action applies to")
-    parser.add_argument("--to", help="the destination chat, for forward")
+    parser.add_argument("--to", help="the destination chat, for forward; 'saved' works here too")
     parser.add_argument(
         "--text", help="the message text, for send, reply and edit; with --file, its caption"
     )

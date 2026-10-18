@@ -23,6 +23,7 @@ class Client:
 
     def __init__(self, telethon):
         self._telethon = telethon
+        self._own_id = None
 
     async def start(self):
         """Connect, then say the account is away.
@@ -39,6 +40,12 @@ class Client:
 
     async def stop(self):
         await self._telethon.disconnect()
+
+    async def own_id(self):
+        """The account's identifier, which is also the identifier of its saved messages."""
+        if self._own_id is None:
+            self._own_id = (await self._telethon.get_me()).id
+        return self._own_id
 
     async def history(self, chat_id, limit=None, **kwargs):
         """Read messages from one chat.

@@ -36,6 +36,7 @@ This holds for a message the user themself sent in a chat. The service gates an 
 - **Prefer `reply` over `send` when answering a specific message**, so the thread stays readable to the person on the other side
 - **A file goes out under the same grant as words**, through `send` or `reply` with `--file`. This client reads the file and hands the service its bytes, so name the file and its size to the user before sending: nothing on the service side looks at what it is
 - **`forward` reaches two chats and needs a grant on both.** Sending a copy of the text instead hides where it came from, so forward when the origin matters and say plainly when you did not
+- **Saved messages are `--chat saved` or `--to saved`.** They are the account's chat with itself, so their identifier is the account's own, and that number names their permission file
 
 ## Mistakes worth naming
 
