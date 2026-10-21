@@ -15,6 +15,40 @@ import sys
 
 DEFAULT_SOCKET = os.environ.get("TG_SOCKET", "/run/tg-agent/socket")
 
+# Messages this client sent, one "CHAT ID" per line, so a watcher can tell the agent's own
+# sends from what the user sent from a phone: the server marks both as the account's
+SENT_KEPT = 1000
+
+
+def sent_log():
+    if os.environ.get("TG_SENT_LOG"):
+        return os.environ["TG_SENT_LOG"]
+    state = os.environ.get("XDG_STATE_HOME") or os.path.expanduser("~/.local/state")
+    return os.path.join(state, "tg-agent", "sent")
+
+
+def remember_sent(chat, message_id):
+    path = sent_log()
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    try:
+        with open(path, encoding="utf-8") as kept:
+            lines = kept.read().splitlines()
+    except FileNotFoundError:
+        lines = []
+    lines = (lines + [f"{chat} {message_id}"])[-SENT_KEPT:]
+    with open(path, "w", encoding="utf-8") as kept:
+        kept.write("\n".join(lines) + "\n")
+
+
+def sent_ids(chat):
+    """The identifiers this client sent into one chat, as it was named then."""
+    try:
+        with open(sent_log(), encoding="utf-8") as kept:
+            pairs = [line.split() for line in kept]
+    except FileNotFoundError:
+        return set()
+    return {int(pair[1]) for pair in pairs if len(pair) == 2 and pair[0] == str(chat)}
+
 
 def build_parser():
     parser = argparse.ArgumentParser(
@@ -135,6 +169,11 @@ def main(argv=None):
         print(f"tg.py: {options.socket}: {unreachable}", file=sys.stderr)
         return 2
     print(json.dumps(answer, ensure_ascii=False, indent=2))
+    if options.action in ("send", "reply"):
+        # Only an answer that sent something carries the message it made
+        sent = (answer.get("result") or {}).get("id")
+        if sent is not None:
+            remember_sent(options.chat, sent)
     return 0 if answer.get("ok") else 1
 
 

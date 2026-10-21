@@ -6,6 +6,11 @@ Kept in the shape of [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), d
 
 ### Added
 
+- `read` shows a rich message as Markdown in its `text`, built from the message's blocks: headings, tables with their alignment, lists with checkboxes, code, quotes and formulas. A message the server sent only in part is fetched whole first. Before, such a message read as empty
+- `tg-watch.py --state FILE` keeps the last message seen between runs, so a hook can start the watcher again and get only what is new
+- `tg-watch.py --exec CMD` runs a shell command for each new message, with the message and its chat as one JSON line on standard input
+- `tg.py` remembers what it sent with `send` and `reply`, in `$XDG_STATE_HOME/tg-agent/sent` or `$TG_SENT_LOG`, and `tg-watch.py` leaves those messages out. What the user sends from another device still shows
+
 - `--parse-mode` for `send`, `reply` and `edit`: `md`, `html`, `none` or `rich`. `rich` sends Telegram's rich Markdown, which the server parses, with headings, tables, lists and formulas. A file's caption cannot be `rich`, and such a request is refused
 - A custom emoji in the text is refused when the account has no Telegram Premium, where the server would drop it from the message
 

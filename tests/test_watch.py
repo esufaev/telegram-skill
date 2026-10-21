@@ -22,6 +22,8 @@ class Options:
         self.since = None
         self.interval = 1
         self.once = True
+        self.state = None
+        self.exec = None
         for name, value in fields.items():
             setattr(self, name, value)
 

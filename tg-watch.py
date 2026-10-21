@@ -8,11 +8,16 @@ last message seen is what the next request asks from, rather than a count of rec
 not.
 
 Both sides are followed. A message the account itself sent from a phone is as much an
-event as one that arrived, and a watcher that hides it shows half a conversation.
+event as one that arrived, and a watcher that hides it shows half a conversation. What
+tg.py sent is the exception: the agent wrote it and already knows it, so it is left out.
+
+A hook starts the watcher fresh on every run, so the mark it resumes from can live in a
+file, and a command can be run for each new message instead of reading the lines.
 """
 
 import argparse
 import json
+import subprocess
 import sys
 import time
 from pathlib import Path
@@ -33,6 +38,8 @@ def build_parser():
             "Examples:\n"
             "  tg-watch.py --chat 932504634\n"
             "  tg-watch.py --chat -1001804413056 --topic 43628 --interval 60\n"
+            "  tg-watch.py --chat 932504634 --once --state ~/.local/state/tg-agent/932504634\n"
+            "  tg-watch.py --chat 932504634 --exec 'notify-send \"$(jq -r .text)\"'\n"
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
@@ -53,6 +60,16 @@ def build_parser():
         "--once",
         action="store_true",
         help="print what is new and exit, instead of following",
+    )
+    parser.add_argument(
+        "--state",
+        help="a file holding the last message seen, read at start and written after "
+        "each round, so a watcher started again by a hook resumes where it stopped",
+    )
+    parser.add_argument(
+        "--exec",
+        help="a shell command run for each new message, with the message as one JSON "
+        "line on its standard input; the lines are still printed",
     )
     parser.add_argument(
         "--socket",
@@ -106,17 +123,53 @@ def round_once(options, since):
         print(f"refused: {answer.get('error')}", flush=True)
         return since
     messages = sorted(answer.get("result") or [], key=lambda m: m["id"])
+    own = tg.sent_ids(options.chat)
     for message in messages:
+        if message.get("out") and message["id"] in own:
+            continue
         print(line_for(message), flush=True)
+        if options.exec:
+            run_for(options, message)
     return newest(messages) or since
+
+
+def run_for(options, message):
+    """Run the caller's command on one message. Its failure is reported, not fatal."""
+    event = json.dumps({"chat": options.chat, **message}, ensure_ascii=False)
+    status = subprocess.run(
+        options.exec, shell=True, input=event + "\n", text=True
+    ).returncode
+    if status:
+        print(f"tg-watch.py: --exec exited {status} on {message['id']}", file=sys.stderr)
+
+
+def read_mark(path):
+    try:
+        with open(path, encoding="utf-8") as kept:
+            return int(kept.read().strip())
+    except (FileNotFoundError, ValueError):
+        return None
+
+
+def write_mark(path, mark):
+    if mark is None:
+        return
+    Path(path).parent.mkdir(parents=True, exist_ok=True)
+    Path(path).write_text(f"{mark}\n", encoding="utf-8")
 
 
 def main(argv=None):
     options = build_parser().parse_args(argv)
     try:
-        since = options.since if options.since is not None else latest_id(options)
+        since = options.since
+        if since is None and options.state:
+            since = read_mark(options.state)
+        if since is None:
+            since = latest_id(options)
         while True:
             since = round_once(options, since)
+            if options.state:
+                write_mark(options.state, since)
             if options.once:
                 return 0
             time.sleep(options.interval)
