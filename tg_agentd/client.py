@@ -6,12 +6,32 @@ removes a message for everyone unless told otherwise. This wrapper exposes one m
 action the permissions name, and each states what Telethon would otherwise assume.
 """
 
+from telethon import utils
 from telethon.tl.functions.account import UpdateStatusRequest
 from telethon.tl.functions.messages import (
+    EditMessageRequest,
     GetDialogFiltersRequest,
     GetForumTopicsRequest,
+    SendMessageRequest,
     UpdateDialogFilterRequest,
 )
+from telethon.tl.types import (
+    InputReplyToMessage,
+    InputRichMessageMarkdown,
+    MessageEntityCustomEmoji,
+)
+
+# The markups Telethon parses on this side, and what it is told for each. The server
+# receives only entities, so it never sees which of these was used. "none" is an explicit
+# None: an omitted mode means Telethon's client-wide default
+PARSED = {"md": "md", "html": "html", "none": None}
+
+# Rich Markdown is parsed by the server instead: headings, tables, lists and formulas,
+# which entities cannot express. The high-level send_message has no way to carry it
+RICH = "rich"
+
+MARKUPS = (*PARSED, RICH)
+DEFAULT_MARKUP = "md"
 
 
 class Client:
@@ -67,19 +87,80 @@ class Client:
         """Mark history as read, which the other side can see."""
         return await self._telethon.send_read_acknowledge(chat_id, message=message)
 
-    async def send(self, chat_id, text, reply_to=None):
-        """Send a message, optionally as a reply. No typing status is announced."""
-        return await self._telethon.send_message(chat_id, text, reply_to=reply_to)
+    async def premium(self):
+        """Whether the account has Premium, asked fresh because a subscription can lapse."""
+        return bool(getattr(await self._telethon.get_me(), "premium", False))
 
-    async def send_file(self, chat_id, file, caption=None, reply_to=None):
-        """Send a file, with the text as its caption. No upload status is announced."""
-        return await self._telethon.send_file(
-            chat_id, file, caption=caption, reply_to=reply_to
+    def custom_emoji_in(self, text, markup=DEFAULT_MARKUP):
+        """Whether the text, read in this markup, holds a custom emoji.
+
+        The parse is Telethon's own and makes no request, so the answer matches what a
+        send would put on the wire.
+        """
+        if markup == RICH:
+            # The server parses rich text and holds its own rules for what it accepts
+            return False
+        mode = utils.sanitize_parse_mode(PARSED[markup])
+        if mode is None or not text:
+            return False
+        _, entities = mode.parse(text)
+        return any(isinstance(entity, MessageEntityCustomEmoji) for entity in entities)
+
+    async def send(self, chat_id, text, reply_to=None, markup=DEFAULT_MARKUP):
+        """Send a message, optionally as a reply. No typing status is announced."""
+        if markup == RICH:
+            peer = await self._telethon.get_input_entity(chat_id)
+            return await self._rich(
+                peer,
+                SendMessageRequest(
+                    peer=peer,
+                    message="",
+                    rich_message=InputRichMessageMarkdown(markdown=text),
+                    reply_to=None
+                    if reply_to is None
+                    else InputReplyToMessage(reply_to_msg_id=reply_to),
+                ),
+            )
+        return await self._telethon.send_message(
+            chat_id, text, reply_to=reply_to, parse_mode=PARSED[markup]
         )
 
-    async def edit(self, chat_id, message_id, text):
+    async def _rich(self, peer, request):
+        """Send a raw request and find the message it made in the updates it returns.
+
+        The lookup is Telethon's own private helper, which its send_message uses for the
+        same job. Writing a second one would match updates by different rules.
+        """
+        result = await self._telethon(request)
+        return self._telethon._get_response_message(request, result, peer)
+
+    async def send_file(
+        self, chat_id, file, caption=None, reply_to=None, markup=DEFAULT_MARKUP
+    ):
+        """Send a file, with the text as its caption. No upload status is announced."""
+        return await self._telethon.send_file(
+            chat_id,
+            file,
+            caption=caption,
+            reply_to=reply_to,
+            parse_mode=PARSED[markup],
+        )
+
+    async def edit(self, chat_id, message_id, text, markup=DEFAULT_MARKUP):
         """Edit a message the account itself sent."""
-        return await self._telethon.edit_message(chat_id, message_id, text=text)
+        if markup == RICH:
+            peer = await self._telethon.get_input_entity(chat_id)
+            return await self._rich(
+                peer,
+                EditMessageRequest(
+                    peer=peer,
+                    id=message_id,
+                    rich_message=InputRichMessageMarkdown(markdown=text),
+                ),
+            )
+        return await self._telethon.edit_message(
+            chat_id, message_id, text=text, parse_mode=PARSED[markup]
+        )
 
     async def delete(self, chat_id, message_ids, *, for_all):
         """Delete messages, for this account alone or for every participant.

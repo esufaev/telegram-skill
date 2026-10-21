@@ -87,6 +87,12 @@ def test_sending_never_announces_typing(client, fake):
 def test_a_reply_carries_the_message_it_answers(client, fake):
     run(client.start())
     run(client.send(777, "text", reply_to=5))
-    assert fake.called("send_message") == [
-        {"entity": 777, "message": "text", "reply_to": 5}
-    ]
+    assert [call["reply_to"] for call in fake.called("send_message")] == [5]
+
+
+def test_sending_states_the_markup_rather_than_taking_telethons_default(client, fake):
+    # Telethon takes its client-wide default when no mode is named, so the client names
+    # one every time
+    run(client.start())
+    run(client.send(777, "text"))
+    assert fake.called("send_message")[-1]["parse_mode"] == "md"

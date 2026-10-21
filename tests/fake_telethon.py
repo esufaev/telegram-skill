@@ -8,6 +8,18 @@ unrecorded method is exactly what these tests exist to catch.
 
 from dataclasses import dataclass, field
 
+# What a recorded call holds for a keyword the caller left out, so that a test can tell
+# Telethon's own default from an explicit None
+OMITTED = "<omitted>"
+
+
+@dataclass
+class Me:
+    """Stands in for the User that get_me answers with."""
+
+    id: int
+    premium: bool = False
+
 
 @dataclass
 class FakeFile:
@@ -57,8 +69,9 @@ class FakeTopic:
 class FakeClient:
     """Records calls. Every method here mirrors one the service is allowed to use."""
 
-    def __init__(self, messages=None, dialogs=None, folders=None, topics=None):
+    def __init__(self, messages=None, dialogs=None, folders=None, topics=None, premium=False):
         self.calls = []
+        self.premium = premium
         self.messages = messages or {}
         self.dialogs = dialogs or []
         self.folders = folders or []
@@ -87,7 +100,7 @@ class FakeClient:
 
     async def get_me(self):
         self._record("get_me")
-        return Dialog(id=1, name="self")
+        return Me(id=1, premium=self.premium)
 
     async def __call__(self, request):
         # Raw requests reach the client this way. The name decides, because the service
@@ -104,7 +117,29 @@ class FakeClient:
                 id=getattr(request, "id", None),
                 filter=getattr(request, "filter", None),
             )
+        if name in ("SendMessageRequest", "EditMessageRequest"):
+            rich = getattr(request, "rich_message", None)
+            reply_to = getattr(request, "reply_to", None)
+            self._record(
+                "raw_rich",
+                request=name,
+                peer=request.peer,
+                message=getattr(request, "message", None),
+                id=getattr(request, "id", None),
+                kind=type(rich).__name__,
+                markdown=getattr(rich, "markdown", None),
+                reply_to=getattr(reply_to, "reply_to_msg_id", None),
+            )
+            return request
         return None
+
+    async def get_input_entity(self, entity):
+        self._record("get_input_entity", entity=entity)
+        return entity
+
+    def _get_response_message(self, request, result, input_chat):
+        # Telethon matches the Updates a raw send returns to the message it created
+        return Message(id=1001, text=request.rich_message.markdown, sender_id=1, out=True)
 
     # Reading
 
@@ -125,17 +160,34 @@ class FakeClient:
     # Writing
 
     async def send_message(self, entity, message, reply_to=None, **kwargs):
-        self._record("send_message", entity=entity, message=message, reply_to=reply_to)
+        self._record(
+            "send_message",
+            entity=entity,
+            message=message,
+            reply_to=reply_to,
+            parse_mode=kwargs.get("parse_mode", OMITTED),
+        )
         return Message(id=999, text=message, sender_id=1, out=True)
 
     async def send_file(self, entity, file, caption=None, reply_to=None, **kwargs):
         self._record(
-            "send_file", entity=entity, file=file, caption=caption, reply_to=reply_to
+            "send_file",
+            entity=entity,
+            file=file,
+            caption=caption,
+            reply_to=reply_to,
+            parse_mode=kwargs.get("parse_mode", OMITTED),
         )
         return Message(id=1000, text=caption or "", sender_id=1, out=True)
 
     async def edit_message(self, entity, message, text=None, **kwargs):
-        self._record("edit_message", entity=entity, message=message, text=text)
+        self._record(
+            "edit_message",
+            entity=entity,
+            message=message,
+            text=text,
+            parse_mode=kwargs.get("parse_mode", OMITTED),
+        )
 
     async def delete_messages(self, entity, message_ids, revoke=None, **kwargs):
         # revoke has no default here on purpose: Telethon defaults it to True, and the

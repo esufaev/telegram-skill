@@ -15,6 +15,7 @@ import binascii
 import io
 
 from . import folders, media, permissions, verbs
+from .client import DEFAULT_MARKUP, MARKUPS, RICH
 
 # Actions that are not permissions of their own, and the permission each one takes
 REQUIRES = {"topics": "read"}
@@ -29,6 +30,10 @@ class ChatIsNotAForum(ValueError):
 
 class BadUpload(ValueError):
     """A file in a request that cannot become an upload."""
+
+
+class BadMarkup(ValueError):
+    """Text in a request that cannot go out in the markup it names."""
 
 
 class Handler:
@@ -48,7 +53,7 @@ class Handler:
             return _refused(str(unknown))
         except permissions.PermissionFileError as broken:
             return _refused(str(broken))
-        except (ChatIsNotAForum, BadUpload) as plain:
+        except (ChatIsNotAForum, BadUpload, BadMarkup) as plain:
             return _refused(str(plain))
         except Exception as unexpected:
             # Anything else has to come back as an answer too. Letting it close the
@@ -157,6 +162,28 @@ class Handler:
                 }
         return None
 
+    async def _markup(self, request):
+        """The markup the request's text goes out in, checked before anything is sent.
+
+        A custom emoji is the one entity the server keeps from an account without
+        Premium, and it drops the emoji rather than refusing the message. Refusing here
+        is the only way the caller learns of it.
+        """
+        markup = request.get("parse_mode", DEFAULT_MARKUP)
+        if markup not in MARKUPS:
+            raise BadMarkup(
+                f"no markup is called {markup!r}; the service takes "
+                + ", ".join(MARKUPS)
+            )
+        if self._client.custom_emoji_in(
+            request.get("text"), markup
+        ) and not await self._client.premium():
+            raise BadMarkup(
+                "the text holds a custom emoji, and only an account with Telegram "
+                "Premium may send one"
+            )
+        return markup
+
     async def _perform(self, action, request):
         chat = permissions.as_identifier(request["chat"])
         if action == "topics":
@@ -199,6 +226,12 @@ class Handler:
             )
             return [_message(m) for m in messages]
         if action in ("send", "reply"):
+            markup = await self._markup(request)
+            if request.get("file") and markup == RICH:
+                # Rich markup belongs to a message's text, and a caption is not one
+                raise BadMarkup(
+                    "rich markup cannot caption a file; send the text as its own message"
+                )
             # A file is a message too, so it takes the grant that sends words. Its bytes
             # arrive in the request because the service never opens a path on a caller's
             # behalf: a path would reach whatever this process can read, its session
@@ -209,10 +242,14 @@ class Handler:
                     _upload(request["file"]),
                     caption=request.get("text"),
                     reply_to=request.get("reply_to"),
+                    markup=markup,
                 )
             else:
                 sent = await self._client.send(
-                    chat, request.get("text", ""), reply_to=request.get("reply_to")
+                    chat,
+                    request.get("text", ""),
+                    reply_to=request.get("reply_to"),
+                    markup=markup,
                 )
             if action == "reply" and self._store.chat_flag(chat, "mark-read-on-reply"):
                 # A reply with no preceding read receipt is a sequence no person
@@ -220,7 +257,10 @@ class Handler:
                 await self._client.mark_read(chat)
             return _message(sent)
         if action == "edit":
-            await self._client.edit(chat, request["id"], request.get("text", ""))
+            markup = await self._markup(request)
+            await self._client.edit(
+                chat, request["id"], request.get("text", ""), markup=markup
+            )
             return None
         if action in ("delete", "delete-for-all"):
             await self._client.delete(

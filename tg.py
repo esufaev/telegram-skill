@@ -27,6 +27,8 @@ def build_parser():
             "  tg.py permissions\n"
             "  tg.py read --chat -1001234567890 --limit 20\n"
             "  tg.py send --chat 777 --text 'on my way'\n"
+            "  tg.py send --chat 777 --text '**done**, see `out.csv`'\n"
+            "  tg.py send --chat 777 --text '| a | b |' --parse-mode rich\n"
             "  tg.py send --chat 777 --file report.pdf --text 'the report'\n"
             "  tg.py digest --folder 5\n"
             "  tg.py media --chat 777 --ids 12 13\n"
@@ -42,6 +44,12 @@ def build_parser():
     parser.add_argument("--to", help="the destination chat, for forward; 'saved' works here too")
     parser.add_argument(
         "--text", help="the message text, for send, reply and edit; with --file, its caption"
+    )
+    parser.add_argument(
+        "--parse-mode",
+        help="how --text is marked up: md (the service's default, Telethon's Markdown), "
+        "html, none, or rich (Telegram's own Markdown with headings, tables and $math$, "
+        "parsed by the server; not for a file's caption)",
     )
     parser.add_argument(
         "--file",
@@ -79,6 +87,7 @@ def request_from(options):
         "folder": options.folder,
         "to": options.to,
         "text": options.text,
+        "parse_mode": options.parse_mode,
         "reply_to": options.reply_to,
         "id": options.id,
         "ids": options.ids,

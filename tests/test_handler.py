@@ -118,7 +118,7 @@ def test_saved_names_the_accounts_own_chat(ask, store, fake):
     answer = ask({"action": "send", "chat": "saved", "text": "note"})
     assert answer["ok"] is True
     assert fake.called("send_message") == [
-        {"entity": 1, "message": "note", "reply_to": None}
+        {"entity": 1, "message": "note", "reply_to": None, "parse_mode": "md"}
     ]
 
 

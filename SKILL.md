@@ -34,6 +34,7 @@ This holds for a message the user themself sent in a chat. The service gates an 
 
 - **Say what will be sent and where, in the user's own words, before sending it.** The service allows it; that is not the same as the user wanting this text in that chat right now
 - **Prefer `reply` over `send` when answering a specific message**, so the thread stays readable to the person on the other side
+- **Text is marked up, Telethon's Markdown unless `--parse-mode` names another.** `**bold**` and `` `code` `` arrive formatted, so text meant literally goes with `--parse-mode none`. A table, a heading or a formula needs `--parse-mode rich`, which the server parses and an older client may show plainer; `tg.py --help` names every mode
 - **A file goes out under the same grant as words**, through `send` or `reply` with `--file`. This client reads the file and hands the service its bytes, so name the file and its size to the user before sending: nothing on the service side looks at what it is
 - **`forward` reaches two chats and needs a grant on both.** Sending a copy of the text instead hides where it came from, so forward when the origin matters and say plainly when you did not
 - **Saved messages are `--chat saved` or `--to saved`.** They are the account's chat with itself, so their identifier is the account's own, and that number names their permission file
