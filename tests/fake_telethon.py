@@ -37,6 +37,8 @@ class Message:
     out: bool = False
     # Telethon's message.file, which is None on a message with nothing attached
     file: FakeFile | None = None
+    # A RichMessage, whose blocks hold the content while the text stays empty
+    rich_message: object = None
 
 
 @dataclass
@@ -69,9 +71,19 @@ class FakeTopic:
 class FakeClient:
     """Records calls. Every method here mirrors one the service is allowed to use."""
 
-    def __init__(self, messages=None, dialogs=None, folders=None, topics=None, premium=False):
+    def __init__(
+        self,
+        messages=None,
+        dialogs=None,
+        folders=None,
+        topics=None,
+        premium=False,
+        full_rich=None,
+    ):
         self.calls = []
         self.premium = premium
+        # The whole RichMessage of each message the server sent only in part, by id
+        self.full_rich = full_rich or {}
         self.messages = messages or {}
         self.dialogs = dialogs or []
         self.folders = folders or []
@@ -116,6 +128,12 @@ class FakeClient:
                 "raw_update_filter",
                 id=getattr(request, "id", None),
                 filter=getattr(request, "filter", None),
+            )
+        if name == "GetRichMessageRequest":
+            self._record("raw_get_rich", peer=request.peer, id=request.id)
+            whole = self.full_rich.get(request.id)
+            return _Messages(
+                [Message(id=request.id, text="", sender_id=0, rich_message=whole)]
             )
         if name in ("SendMessageRequest", "EditMessageRequest"):
             rich = getattr(request, "rich_message", None)
@@ -216,6 +234,13 @@ class _Filters:
     """What GetDialogFilters answers with: the folders, under a field of their own."""
 
     filters: list
+
+
+@dataclass
+class _Messages:
+    """What a request for messages answers with: the messages, under a field of their own."""
+
+    messages: list
 
 
 @dataclass

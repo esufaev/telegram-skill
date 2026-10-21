@@ -14,7 +14,7 @@ import base64
 import binascii
 import io
 
-from . import folders, media, permissions, verbs
+from . import folders, media, permissions, rich, verbs
 from .client import DEFAULT_MARKUP, MARKUPS, RICH
 
 # Actions that are not permissions of their own, and the permission each one takes
@@ -418,9 +418,14 @@ def _media_kind(message):
 def _message(message):
     if message is None:
         return None
+    # A rich message keeps its content in blocks and its text empty, so the blocks are
+    # what the text is
+    content = getattr(message, "rich_message", None)
     return {
         "id": getattr(message, "id", None),
-        "text": getattr(message, "text", ""),
+        "text": rich.to_markdown(content)
+        if content is not None
+        else getattr(message, "text", ""),
         "from": getattr(message, "sender_id", None),
         "out": getattr(message, "out", False),
         "media": _media_kind(message),

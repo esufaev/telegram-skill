@@ -12,6 +12,7 @@ from telethon.tl.functions.messages import (
     EditMessageRequest,
     GetDialogFiltersRequest,
     GetForumTopicsRequest,
+    GetRichMessageRequest,
     SendMessageRequest,
     UpdateDialogFilterRequest,
 )
@@ -71,9 +72,22 @@ class Client:
         """Read messages from one chat.
 
         Reading does not mark anything read: that is a separate call in MTProto, and this
-        one never makes it.
+        one never makes it. A rich message the server sent only in part is fetched whole,
+        so a reader never takes a fragment for the message.
         """
-        return await self._telethon.get_messages(chat_id, limit=limit, **kwargs)
+        messages = await self._telethon.get_messages(chat_id, limit=limit, **kwargs)
+        for message in messages:
+            content = getattr(message, "rich_message", None)
+            if content is not None and getattr(content, "part", None):
+                answer = await self._telethon(
+                    GetRichMessageRequest(peer=chat_id, id=message.id)
+                )
+                whole = [
+                    m for m in getattr(answer, "messages", []) if m.id == message.id
+                ]
+                if whole and whole[0].rich_message is not None:
+                    message.rich_message = whole[0].rich_message
+        return messages
 
     async def dialogs(self, **kwargs):
         """Every dialog the account has, unread counts included.
