@@ -139,6 +139,7 @@ class Handler:
         stream at the next message rather than at the next connection. The subscription
         is taken before the first answer, so nothing that lands in between is lost.
         """
+        topic = request.get("topic")
         try:
             request = await self._saved(request)
             chat = permissions.as_identifier(request.get("chat"))
@@ -164,6 +165,8 @@ class Handler:
                         "last one seen, then subscribe again"
                     )
                     return
+                if topic is not None and _topic_of(message) != topic:
+                    continue
                 try:
                     refusal, _, _ = await self._grant(chat, "read")
                 except permissions.PermissionFileError as broken:
@@ -507,6 +510,22 @@ def _allowed(by, action, result):
         "action": action,
         "result": result,
     }
+
+
+# The topic a forum keeps for whatever names no other one
+GENERAL_TOPIC = 1
+
+
+def _topic_of(message):
+    """The forum topic a message is in, read from its reply header.
+
+    A message posted in a topic replies to the topic itself; one answering another
+    message names the topic as its top. General carries no forum header at all.
+    """
+    header = getattr(message, "reply_to", None)
+    if header is None or not getattr(header, "forum_topic", None):
+        return GENERAL_TOPIC
+    return getattr(header, "reply_to_top_id", None) or header.reply_to_msg_id
 
 
 def _with_folder(answer, through):

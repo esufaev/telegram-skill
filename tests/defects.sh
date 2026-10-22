@@ -369,9 +369,24 @@ defect 'watch/dedupe' 'tg-watch.py' \
   'a message that lands during the catch-up read is shown twice, once read and once pushed'
 
 defect 'watch/restart' 'tg-watch.py' \
-  '        return since, push' \
+  "$(
+    cat <<'EOF'
+        print(f"tg-watch.py: {options.socket}: {unreachable}", file=sys.stderr)
+        return since, False
+EOF
+  )" \
   '        raise' \
   'a watcher ends for good whenever the service restarts, as it does on every system rebuild'
+
+defect 'watch/wait' 'tg-watch.py' \
+  '            if not now:' \
+  '            if True:' \
+  'after every restart of the service the watch stays deaf for the whole interval, and a reply in that gap arrives late'
+
+defect 'push/topic' 'tg_agentd/handler.py' \
+  'if topic is not None and _topic_of(message) != topic:' \
+  'if False:' \
+  'a watch on one forum topic shows every topic of the forum, and the agent answers conversations it was not asked to follow'
 
 # Push. The session receives every update, so a subscription has to be held to its grant
 defect 'push/recheck' 'tg_agentd/handler.py' \

@@ -82,6 +82,8 @@ class Message:
     file: FakeFile | None = None
     # A RichMessage, whose blocks hold the content while the text stays empty
     rich_message: object = None
+    # A MessageReplyHeader, which also says which forum topic the message is in
+    reply_to: object = None
 
 
 @dataclass

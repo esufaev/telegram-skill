@@ -7,7 +7,8 @@ Kept in the shape of [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), d
 ### Added
 
 - `subscribe`: the service passes on each new message of a chat as Telegram pushes it, under the chat's `read` grant, decided again for every message. A subscriber that stops reading is cut off with a reason rather than held in memory
-- `tg-watch.py` follows a chat through `subscribe` and shows a message as it lands. It polls a forum topic, a `--once` run and a service without `subscribe`
+- `subscribe` takes a `topic`, and passes on only that forum topic
+- `tg-watch.py` follows a chat or a topic through `subscribe` and shows a message as it lands. A stream the service closed is opened again at once; `--interval` is now only the wait after the service could not be reached or refused, and defaults to 5 seconds. A `--once` run still reads once
 
 - `whoami` describes the account: identifier, name, username and Premium. It needs no grant
 - `chat-info` describes a chat under its `read` grant. For a person: name, username, Premium, phone when they share it, last seen and bio. For a group or a channel: its kind, title, username, size and description

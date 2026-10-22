@@ -141,6 +141,47 @@ def test_saved_subscribes_to_the_accounts_own_chat(world):
     run(scenario)
 
 
+def in_topic(top, reply=None):
+    """The reply header of a message in a forum topic, posted directly or as a reply."""
+    if reply is None:
+        return t.MessageReplyHeader(forum_topic=True, reply_to_msg_id=top)
+    return t.MessageReplyHeader(forum_topic=True, reply_to_msg_id=reply, reply_to_top_id=top)
+
+
+def test_a_topic_subscription_carries_only_that_topic(world):
+    async def scenario():
+        service, account, fake, grant = await started(world)
+        grant(-100, "read")
+        stream = service.stream({"action": "subscribe", "chat": -100, "topic": 17})
+        assert (await anext(stream))["ok"] is True
+        await fake.emit(-100, Message(id=1, text="general", sender_id=5))
+        await fake.emit(-100, Message(id=2, text="other", sender_id=5, reply_to=in_topic(18)))
+        await fake.emit(-100, Message(id=3, text="posted", sender_id=5, reply_to=in_topic(17)))
+        await fake.emit(
+            -100, Message(id=4, text="answered", sender_id=5, reply_to=in_topic(17, reply=3))
+        )
+        got = [(await anext(stream))["message"]["text"] for _ in range(2)]
+        assert got == ["posted", "answered"]
+        await stream.aclose()
+
+    run(scenario)
+
+
+def test_the_general_topic_holds_what_names_no_topic(world):
+    # General is topic 1, and its messages carry no forum header at all
+    async def scenario():
+        service, account, fake, grant = await started(world)
+        grant(-100, "read")
+        stream = service.stream({"action": "subscribe", "chat": -100, "topic": 1})
+        await anext(stream)
+        await fake.emit(-100, Message(id=5, text="topic", sender_id=5, reply_to=in_topic(17)))
+        await fake.emit(-100, Message(id=6, text="general", sender_id=5))
+        assert (await anext(stream))["message"]["text"] == "general"
+        await stream.aclose()
+
+    run(scenario)
+
+
 def test_a_rich_message_sent_in_part_arrives_whole(world):
     async def scenario():
         service, account, fake, grant = await started(world)

@@ -1,10 +1,10 @@
-"""The watcher takes pushed messages when the service offers them, and polls otherwise.
+"""The watcher follows a chat through a subscription and resumes it without delay.
 
 A subscription is opened before the catch-up read, so a message that lands during the
-read arrives twice and is shown once. A service too old to know subscribe answers that
-it has no such action, and the watcher polls as before. A hook's single run and a forum
-topic keep polling: a run that exits at once has nothing to wait on, and a subscription
-covers the whole chat rather than one topic.
+read arrives twice and is shown once. A stream the service closes, as on a restart, is
+opened again at once: the socket outlives the service and holds the connection until it
+is back. Waiting is only for a service that cannot be reached at all, or a refusal, which
+asking again at once would only repeat. A hook's single run reads once and exits.
 """
 
 import importlib.util
@@ -66,12 +66,11 @@ def test_a_pushed_message_is_shown_once_even_when_the_catch_up_read_saw_it(
         pushed=[{"ok": True, "message": message(21, "during the read")},
                 {"ok": True, "message": message(22, "pushed")}],
     )
-    mark = watch.follow(Options(), since=20)
+    assert watch.follow(Options(), since=20) == (22, True)
     assert capsys.readouterr().out.splitlines() == [
         "21 42 during the read",
         "22 42 pushed",
     ]
-    assert mark == 22
 
 
 def test_the_subscription_opens_before_the_catch_up_read(monkeypatch):
@@ -82,6 +81,12 @@ def test_the_subscription_opens_before_the_catch_up_read(monkeypatch):
     monkeypatch.setattr(tg, "ask", lambda s, r: (order.append("read"), ask(s, r))[1])
     watch.follow(Options(), since=20)
     assert order[:2] == ["subscribe", "read"]
+
+
+def test_a_topic_is_named_in_the_subscription(monkeypatch):
+    opened = serve(monkeypatch, history=[], pushed=[])
+    watch.follow(Options(topic=17), since=1)
+    assert opened == [{"action": "subscribe", "chat": "777", "topic": 17}]
 
 
 def test_the_agents_own_pushed_send_is_not_echoed(monkeypatch, tmp_path, capsys):
@@ -104,31 +109,26 @@ def test_each_pushed_message_moves_the_kept_mark(monkeypatch, tmp_path):
     assert state.read_text().strip() == "31"
 
 
-def test_a_refusal_in_the_stream_is_reported_and_ends_the_follow(monkeypatch, capsys):
+def test_a_refusal_ends_the_follow_and_asks_for_a_wait(monkeypatch, capsys):
     serve(
         monkeypatch,
         history=[],
         pushed=[{"ok": False, "error": "chat 777 does not allow read"},
                 {"ok": True, "message": message(41, "never shown")}],
     )
-    mark = watch.follow(Options(), since=40)
+    assert watch.follow(Options(), since=40) == (40, False)
     out = capsys.readouterr().out
     assert "refused" in out and "never shown" not in out
-    assert mark == 40
 
 
-def test_a_service_without_subscribe_is_polled_instead(monkeypatch):
-    serve(
-        monkeypatch,
-        history=[],
-        pushed=[],
-        ack={"ok": False, "error": "no action is called 'subscribe'"},
-    )
-    try:
-        watch.follow(Options(), since=1)
-    except watch.NoPush:
-        return
-    raise AssertionError("an old service was taken for a subscription")
+def test_a_refused_subscription_asks_for_a_wait(monkeypatch, capsys):
+    serve(monkeypatch, history=[], pushed=[], ack={"ok": False, "error": "no read"})
+    assert watch.follow(Options(), since=1) == (1, False)
+
+
+def test_a_stream_the_service_closed_is_opened_again_at_once(monkeypatch):
+    serve(monkeypatch, history=[], pushed=[{"ok": True, "message": message(81, "x")}])
+    assert watch.step(Options(), since=80) == (81, True)
 
 
 def test_an_unreachable_service_is_waited_out_rather_than_ending_the_watch(
@@ -139,25 +139,28 @@ def test_an_unreachable_service_is_waited_out_rather_than_ending_the_watch(
         yield
 
     monkeypatch.setattr(tg, "stream", refused)
-    assert watch.step(Options(), since=60, push=True) == (60, True)
+    assert watch.step(Options(), since=60) == (60, False)
     assert "Connection refused" in capsys.readouterr().err
 
 
-def test_an_old_service_switches_the_watch_to_polling(monkeypatch, capsys):
-    serve(
-        monkeypatch,
-        history=[message(71, "polled")],
-        pushed=[],
-        ack={"ok": False, "error": "no action is called 'subscribe'"},
-    )
-    assert watch.step(Options(), since=70, push=True) == (71, False)
-    assert capsys.readouterr().out.splitlines() == ["71 42 polled"]
+def test_the_watch_waits_only_when_told_to(monkeypatch):
+    turns = iter([(1, True), (2, False), (3, True)])
+    slept = []
+
+    def step(options, since):
+        try:
+            return next(turns)
+        except StopIteration:
+            raise KeyboardInterrupt from None
+
+    monkeypatch.setattr(watch, "step", step)
+    monkeypatch.setattr(watch.time, "sleep", slept.append)
+    assert watch.main(["--chat", "777", "--since", "0", "--interval", "7"]) == 0
+    assert slept == [7]
 
 
-def test_a_single_run_and_a_topic_never_subscribe(monkeypatch, capsys):
+def test_a_single_run_never_subscribes(monkeypatch, capsys):
     opened = serve(monkeypatch, history=[message(51, "x")], pushed=[])
     watch.main(["--chat", "777", "--once", "--since", "50"])
-    watch.main(["--chat", "777", "--topic", "9", "--once", "--since", "50"])
     assert opened == []
-    assert watch.wants_push(Options(topic=9)) is False
-    assert watch.wants_push(Options()) is True
+    assert capsys.readouterr().out.splitlines() == ["51 42 x"]
