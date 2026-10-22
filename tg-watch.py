@@ -2,9 +2,10 @@
 """Follow a chat and print each new message as one line.
 
 Every line is an event: the identifier, who sent it, and the text with newlines folded
-away, so a reader that consumes lines sees one message per line. The identifier of the
-last message seen is what the next request asks from, rather than a count of recent ones
-— asking for the last N loses whatever arrived between two rounds and repeats what did
+away, so a reader that consumes lines sees one message per line. The service pushes each
+message as it lands; where it cannot, the chat is polled. Either way the identifier of
+the last message seen is what a read asks from, rather than a count of recent ones —
+asking for the last N loses whatever arrived between two rounds and repeats what did
 not.
 
 Both sides are followed. A message the account itself sent from a phone is as much an
@@ -49,7 +50,8 @@ def build_parser():
         "--interval",
         type=int,
         default=DEFAULT_INTERVAL,
-        help="seconds between rounds (default: %(default)s)",
+        help="seconds between polls, where the chat is polled, and before a broken "
+        "stream is opened again (default: %(default)s)",
     )
     parser.add_argument(
         "--since",
@@ -123,14 +125,78 @@ def round_once(options, since):
         print(f"refused: {answer.get('error')}", flush=True)
         return since
     messages = sorted(answer.get("result") or [], key=lambda m: m["id"])
-    own = tg.sent_ids(options.chat)
     for message in messages:
-        if message.get("out") and message["id"] in own:
-            continue
+        since = shown(options, message, since)
+    return since
+
+
+class NoPush(Exception):
+    """The service has no subscribe action, so the chat has to be polled."""
+
+
+def wants_push(options):
+    """A subscription covers a whole chat, so one topic of a forum is polled instead."""
+    return not options.topic
+
+
+def follow(options, since):
+    """Subscribe, catch up by reading, then show each pushed message as it arrives.
+
+    The subscription is opened before the catch-up read, so a message that lands during
+    the read is pushed as well, and the mark keeps it from being shown twice. Answers
+    with the mark to resume from once the stream ends.
+    """
+    answers = tg.stream(options.socket, {"action": "subscribe", "chat": options.chat})
+    first = next(answers, None)
+    if first is None:
+        return since
+    if not first.get("ok"):
+        if str(first.get("error", "")).startswith("no action is called"):
+            raise NoPush
+        print(f"refused: {first.get('error')}", flush=True)
+        return since
+    since = round_once(options, since)
+    for answer in answers:
+        if not answer.get("ok"):
+            print(f"refused: {answer.get('error')}", flush=True)
+            return since
+        since = shown(options, answer["message"], since)
+    return since
+
+
+def shown(options, message, since):
+    """Show one message unless it is older than the mark or the agent sent it.
+
+    Answers with the mark after it, which is kept in the state file at once, so a
+    watcher stopped mid-stream resumes after the last message it handled.
+    """
+    if since is not None and message["id"] <= since:
+        return since
+    if not (message.get("out") and message["id"] in tg.sent_ids(options.chat)):
         print(line_for(message), flush=True)
         if options.exec:
             run_for(options, message)
-    return newest(messages) or since
+    if options.state:
+        write_mark(options.state, message["id"])
+    return message["id"]
+
+
+def step(options, since, push):
+    """One turn of the watch: a subscription while the service offers one, else a poll.
+
+    A service that cannot be reached is reported and waited out rather than ending the
+    watch, since it restarts in seconds whenever its system is rebuilt.
+    """
+    try:
+        if push:
+            try:
+                return follow(options, since), True
+            except NoPush:
+                return round_once(options, since), False
+        return round_once(options, since), False
+    except OSError as unreachable:
+        print(f"tg-watch.py: {options.socket}: {unreachable}", file=sys.stderr)
+        return since, push
 
 
 def run_for(options, message):
@@ -166,12 +232,16 @@ def main(argv=None):
             since = read_mark(options.state)
         if since is None:
             since = latest_id(options)
-        while True:
+        if options.once:
             since = round_once(options, since)
             if options.state:
                 write_mark(options.state, since)
-            if options.once:
-                return 0
+            return 0
+        push = wants_push(options)
+        while True:
+            since, push = step(options, since, push)
+            if options.state:
+                write_mark(options.state, since)
             time.sleep(options.interval)
     except KeyboardInterrupt:
         return 0

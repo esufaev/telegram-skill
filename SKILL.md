@@ -8,7 +8,7 @@ license: MIT
 
 The account is reached through `tg-agentd`, a service on a unix socket. It holds the session, reads the permission files and performs the action; this side sends a request and reads an answer. [`tg.py`](tg.py) beside this file is the client. It is not on the PATH, so run it by its path, and `tg.py --help` is the reference for its flags and every action's name
 
-[`tg-watch.py`](tg-watch.py) beside it follows one chat and prints each new message as a line, both sides of the conversation included except what `tg.py` itself sent. Use it when the task is to notice a reply rather than to fetch one. Under a hook that starts it again on every run, give it `--once --state FILE` so it resumes where it stopped; `tg-watch.py --help` is its reference
+[`tg-watch.py`](tg-watch.py) beside it follows one chat and prints each new message as a line as it arrives, both sides of the conversation included except what `tg.py` itself sent. Use it when the task is to notice a reply rather than to fetch one. It outlives a restart of the service, so a long watch needs no restarting of its own. Under a hook that starts it again on every run, give it `--once --state FILE` so it resumes where it stopped; `tg-watch.py --help` is its reference
 
 ## The border
 

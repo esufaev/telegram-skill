@@ -68,7 +68,7 @@ The client holds no secret and makes no decision. It sends a request and prints 
 
 A file to send travels inside its request as bytes: the client reads it with the caller's own access, and the service never opens a path. A path would reach whatever the service can read, its own session included
 
-`tg-watch.py` beside it follows a chat and prints each new message as a line — both sides, from the last one seen rather than the last few, so nothing between two rounds is lost or repeated
+`tg-watch.py` beside it follows a chat and prints each new message as a line the moment it lands — both sides, except what the agent itself sent. The service passes on what Telegram already pushes to its session, under the same read grant, decided again for every message. When the stream breaks, the watcher reads from the last message it saw, so nothing is lost or repeated
 
 Three properties are tests rather than promises, and each has a planted defect proving the suite would notice: no path that reads history marks it read, every connection sends an explicit offline status, and every deletion states whether it removes the message for everyone
 

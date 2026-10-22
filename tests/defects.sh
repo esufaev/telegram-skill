@@ -320,19 +320,84 @@ defect 'rich/partial' 'tg_agentd/client.py' \
 
 # The watcher. It runs under hooks, so its mark and its filter decide what the agent sees
 defect 'watch/echo-all' 'tg-watch.py' \
-  'if message.get("out") and message["id"] in own:' \
-  'if message.get("out"):' \
+  "$(
+    cat <<'EOF'
+    if not (message.get("out") and message["id"] in tg.sent_ids(options.chat)):
+EOF
+  )" \
+  "$(
+    cat <<'EOF'
+    if not message.get("out"):
+EOF
+  )" \
   'what the user writes from a phone disappears from the watch along with the agent'\''s own sends'
 
 defect 'watch/echo-none' 'tg-watch.py' \
-  'if message.get("out") and message["id"] in own:' \
-  'if False:' \
+  "$(
+    cat <<'EOF'
+    if not (message.get("out") and message["id"] in tg.sent_ids(options.chat)):
+EOF
+  )" \
+  '    if True:' \
   'every message the agent sends comes back to it as news, and it may answer itself'
 
 defect 'watch/state' 'tg-watch.py' \
-  '                write_mark(options.state, since)' \
-  '                pass' \
+  "$(
+    cat <<'EOF'
+            since = round_once(options, since)
+            if options.state:
+                write_mark(options.state, since)
+            return 0
+EOF
+  )" \
+  "$(
+    cat <<'EOF'
+            since = round_once(options, since)
+            return 0
+EOF
+  )" \
   'a watcher started again by a hook never moves its mark, so it reports the same messages on every run'
+
+defect 'watch/state-pushed' 'tg-watch.py' \
+  '        write_mark(options.state, message["id"])' \
+  '        pass' \
+  'a watcher stopped while following a stream resumes from before the messages it already showed, and shows them again'
+
+defect 'watch/dedupe' 'tg-watch.py' \
+  'if since is not None and message["id"] <= since:' \
+  'if False:' \
+  'a message that lands during the catch-up read is shown twice, once read and once pushed'
+
+defect 'watch/restart' 'tg-watch.py' \
+  '        return since, push' \
+  '        raise' \
+  'a watcher ends for good whenever the service restarts, as it does on every system rebuild'
+
+# Push. The session receives every update, so a subscription has to be held to its grant
+defect 'push/recheck' 'tg_agentd/handler.py' \
+  '                    refusal, _, _ = await self._grant(chat, "read")' \
+  '                    refusal = None' \
+  'withdrawing read from a chat does not stop a running subscription, so messages keep reaching the agent after the user took the grant back'
+
+defect 'push/chat' 'tg_agentd/hub.py' \
+  'for subscription in list(self._by_chat.get(chat, ())):' \
+  'for subscription in [s for held in self._by_chat.values() for s in held]:' \
+  'a subscriber to one chat receives the messages of every chat on the account, granted or not'
+
+defect 'push/unsubscribe' 'tg_agentd/handler.py' \
+  '            self._client.hub.unsubscribe(chat, subscription)' \
+  '            pass' \
+  'every subscription that ends leaves its queue in the hub, so the service holds the messages of watchers long gone'
+
+defect 'push/leave' 'tg_agentd/server.py' \
+  'left = asyncio.ensure_future(reader.read())' \
+  'left = asyncio.ensure_future(asyncio.sleep(3600))' \
+  'a watcher that closes its connection stays subscribed until the next message in that chat, which may never come'
+
+defect 'push/bound' 'tg_agentd/hub.py' \
+  'if len(self._waiting) >= self._depth:' \
+  'if False:' \
+  'a subscriber that stops reading makes the service hold every message of that chat in memory, without limit'
 
 # Profiles. The other party of a chat is described under the grant that reads the chat
 defect 'info/grant' 'tg_agentd/handler.py' \

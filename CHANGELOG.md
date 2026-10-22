@@ -6,6 +6,9 @@ Kept in the shape of [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), d
 
 ### Added
 
+- `subscribe`: the service passes on each new message of a chat as Telegram pushes it, under the chat's `read` grant, decided again for every message. A subscriber that stops reading is cut off with a reason rather than held in memory
+- `tg-watch.py` follows a chat through `subscribe` and shows a message as it lands. It polls a forum topic, a `--once` run and a service without `subscribe`
+
 - `whoami` describes the account: identifier, name, username and Premium. It needs no grant
 - `chat-info` describes a chat under its `read` grant. For a person: name, username, Premium, phone when they share it, last seen and bio. For a group or a channel: its kind, title, username, size and description
 
@@ -23,6 +26,7 @@ Kept in the shape of [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), d
 
 ### Fixed
 
+- `tg-watch.py` ended with "Connection refused" whenever the service restarted, as on every system rebuild. It now waits the restart out and goes on from the last message it saw
 - A refused `topics` named `topics` in its remedy, a word the permission file rejects. The remedy now names `read`, the grant the action takes
 
 ## 2026-10-18
