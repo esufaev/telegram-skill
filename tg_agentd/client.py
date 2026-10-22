@@ -8,9 +8,12 @@ action the permissions name, and each states what Telethon would otherwise assum
 
 from telethon import utils
 from telethon.tl.functions.account import UpdateStatusRequest
+from telethon.tl.functions.channels import GetFullChannelRequest
+from telethon.tl.functions.users import GetFullUserRequest
 from telethon.tl.functions.messages import (
     EditMessageRequest,
     GetDialogFiltersRequest,
+    GetFullChatRequest,
     GetForumTopicsRequest,
     GetRichMessageRequest,
     SendMessageRequest,
@@ -100,6 +103,28 @@ class Client:
     async def mark_read(self, chat_id, message=None):
         """Mark history as read, which the other side can see."""
         return await self._telethon.send_read_acknowledge(chat_id, message=message)
+
+    async def me(self):
+        """The account's own User."""
+        return await self._telethon.get_me()
+
+    async def entity(self, chat_id):
+        """The user, group or channel behind a chat identifier."""
+        return await self._telethon.get_entity(chat_id)
+
+    async def full_profile(self, entity):
+        """The part of a profile the entity itself leaves out: the bio, and a group's size.
+
+        Each kind of entity has its own request for it, and an unknown kind has none.
+        """
+        kind = type(entity).__name__
+        if kind == "User":
+            return (await self._telethon(GetFullUserRequest(id=entity))).full_user
+        if kind == "Channel":
+            return (await self._telethon(GetFullChannelRequest(channel=entity))).full_chat
+        if kind == "Chat":
+            return (await self._telethon(GetFullChatRequest(chat_id=entity.id))).full_chat
+        return None
 
     async def premium(self):
         """Whether the account has Premium, asked fresh because a subscription can lapse."""

@@ -333,3 +333,19 @@ defect 'watch/state' 'tg-watch.py' \
   '                write_mark(options.state, since)' \
   '                pass' \
   'a watcher started again by a hook never moves its mark, so it reports the same messages on every run'
+
+# Profiles. The other party of a chat is described under the grant that reads the chat
+defect 'info/grant' 'tg_agentd/handler.py' \
+  'REQUIRES = {"topics": "read", "chat-info": "read"}' \
+  'REQUIRES = {"topics": "read", "chat-info": "send"}' \
+  'a chat the agent may only write into tells it the phone number, the bio and the last-seen time of the person there'
+
+defect 'info/remedy' 'tg_agentd/handler.py' \
+  'return _refused(decision.reason, remedy=_remedy(chat, needs))' \
+  'return _refused(decision.reason, remedy=_remedy(chat, action))' \
+  'a refused chat-info tells the user to grant a word the permission file rejects, so following the remedy breaks the file'
+
+defect 'info/hidden' 'tg_agentd/profile.py' \
+  'return {key: value for key, value in described.items() if value is not None}' \
+  'return described' \
+  'a phone number a person hides reads as a field that exists and is empty, rather than as one the account cannot see'

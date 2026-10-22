@@ -14,11 +14,54 @@ OMITTED = "<omitted>"
 
 
 @dataclass
-class Me:
-    """Stands in for the User that get_me answers with."""
+class User:
+    """Stands in for a User, private fields included, so a test can see what is withheld."""
 
     id: int
+    first_name: str | None = None
+    last_name: str | None = None
+    username: str | None = None
     premium: bool = False
+    bot: bool = False
+    # Telethon's User.phone, digits without the plus, None when hidden
+    phone: str | None = None
+    status: object = None
+    # Not a User field: the full-profile request answers with it
+    about: str | None = None
+
+
+# get_me answers with the account's own User
+Me = User
+
+
+@dataclass
+class Chat:
+    """Stands in for a basic group."""
+
+    id: int
+    title: str
+    participants_count: int | None = None
+    about: str | None = None
+
+
+@dataclass
+class Channel:
+    """Stands in for a channel, or a supergroup when megagroup is set."""
+
+    id: int
+    title: str
+    username: str | None = None
+    megagroup: bool = False
+    participants_count: int | None = None
+    about: str | None = None
+
+
+@dataclass
+class _Full:
+    """What a full-profile request answers with, reduced to the fields the service reads."""
+
+    about: str | None
+    participants_count: int | None = None
 
 
 @dataclass
@@ -79,9 +122,12 @@ class FakeClient:
         topics=None,
         premium=False,
         full_rich=None,
+        entities=None,
     ):
         self.calls = []
         self.premium = premium
+        # What get_entity answers for each identifier
+        self.entities = entities or {}
         # The whole RichMessage of each message the server sent only in part, by id
         self.full_rich = full_rich or {}
         self.messages = messages or {}
@@ -112,7 +158,11 @@ class FakeClient:
 
     async def get_me(self):
         self._record("get_me")
-        return Me(id=1, premium=self.premium)
+        return Me(id=1, first_name="Self", username="self_name", premium=self.premium)
+
+    async def get_entity(self, entity):
+        self._record("get_entity", entity=entity)
+        return self.entities[entity]
 
     async def __call__(self, request):
         # Raw requests reach the client this way. The name decides, because the service
@@ -129,6 +179,19 @@ class FakeClient:
                 id=getattr(request, "id", None),
                 filter=getattr(request, "filter", None),
             )
+        if name == "GetFullUserRequest":
+            self._record("raw_full", request=name)
+            return _FullAnswer(full_user=_Full(about=request.id.about))
+        if name == "GetFullChannelRequest":
+            self._record("raw_full", request=name)
+            entity = request.channel
+            return _FullAnswer(
+                full_chat=_Full(entity.about, entity.participants_count)
+            )
+        if name == "GetFullChatRequest":
+            self._record("raw_full", request=name)
+            entity = next(e for e in self.entities.values() if e.id == request.chat_id)
+            return _FullAnswer(full_chat=_Full(entity.about, entity.participants_count))
         if name == "GetRichMessageRequest":
             self._record("raw_get_rich", peer=request.peer, id=request.id)
             whole = self.full_rich.get(request.id)
@@ -234,6 +297,14 @@ class _Filters:
     """What GetDialogFilters answers with: the folders, under a field of their own."""
 
     filters: list
+
+
+@dataclass
+class _FullAnswer:
+    """users.UserFull or messages.ChatFull: the full profile under its own field."""
+
+    full_user: _Full | None = None
+    full_chat: _Full | None = None
 
 
 @dataclass

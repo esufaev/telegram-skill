@@ -6,6 +6,9 @@ Kept in the shape of [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), d
 
 ### Added
 
+- `whoami` describes the account: identifier, name, username and Premium. It needs no grant
+- `chat-info` describes a chat under its `read` grant. For a person: name, username, Premium, phone when they share it, last seen and bio. For a group or a channel: its kind, title, username, size and description
+
 - `read` shows a rich message as Markdown in its `text`, built from the message's blocks: headings, tables with their alignment, lists with checkboxes, code, quotes and formulas. A message the server sent only in part is fetched whole first. Before, such a message read as empty
 - `tg-watch.py --state FILE` keeps the last message seen between runs, so a hook can start the watcher again and get only what is new
 - `tg-watch.py --exec CMD` runs a shell command for each new message, with the message and its chat as one JSON line on standard input
@@ -17,6 +20,10 @@ Kept in the shape of [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), d
 ### Changed
 
 - The markup is named to Telethon on every write, Markdown by default. Before, the service left it to Telethon's client default, which was also Markdown
+
+### Fixed
+
+- A refused `topics` named `topics` in its remedy, a word the permission file rejects. The remedy now names `read`, the grant the action takes
 
 ## 2026-10-18
 

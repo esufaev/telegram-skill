@@ -14,11 +14,12 @@ import base64
 import binascii
 import io
 
-from . import folders, media, permissions, rich, verbs
+from . import folders, media, permissions, profile, rich, verbs
 from .client import DEFAULT_MARKUP, MARKUPS, RICH
 
-# Actions that are not permissions of their own, and the permission each one takes
-REQUIRES = {"topics": "read"}
+# Actions that are not permissions of their own, and the permission each one takes.
+# Describing a chat's other party is reading about them, so it takes what reading does
+REQUIRES = {"topics": "read", "chat-info": "read"}
 
 # The name a request may give the account's saved messages in place of their identifier
 SAVED = "saved"
@@ -84,6 +85,12 @@ class Handler:
             ]
             return _allowed(None, action, {"folders": listed})
 
+        # The account's own profile is the user's to see, so it needs no grant
+        if action == "whoami":
+            return _allowed(
+                None, action, profile.describe(await self._client.me(), private=False)
+            )
+
         # Saved messages are the account's chat with itself, so "saved" stands for the
         # account's own identifier. The grant stays in the file named by that number
         for key in ("chat", "to"):
@@ -110,7 +117,9 @@ class Handler:
             # first, so a chat the user decided on personally keeps that decision
             through = await self._folder_covering(chat, needs)
             if through is None:
-                return _refused(decision.reason, remedy=_remedy(chat, action))
+                # The remedy names the grant, which differs from the action for topics
+                # and chat-info: a file naming either word would be refused as unknown
+                return _refused(decision.reason, remedy=_remedy(chat, needs))
 
         # A download has to land somewhere the user can reach. Inventing a path would put
         # the account's files wherever this process happens to be running
@@ -186,6 +195,9 @@ class Handler:
 
     async def _perform(self, action, request):
         chat = permissions.as_identifier(request["chat"])
+        if action == "chat-info":
+            entity = await self._client.entity(chat)
+            return profile.describe(entity, await self._client.full_profile(entity))
         if action == "topics":
             try:
                 listed = await self._client.topics(chat)

@@ -59,6 +59,8 @@ def build_parser():
             "it; take that line to the user rather than working around it.\n\n"
             "Examples:\n"
             "  tg.py permissions\n"
+            "  tg.py whoami\n"
+            "  tg.py chat-info --chat 777\n"
             "  tg.py read --chat -1001234567890 --limit 20\n"
             "  tg.py send --chat 777 --text 'on my way'\n"
             "  tg.py send --chat 777 --text '**done**, see `out.csv`'\n"
@@ -69,7 +71,11 @@ def build_parser():
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
-    parser.add_argument("action", help="the action to ask for; 'permissions' lists what is held")
+    parser.add_argument(
+        "action",
+        help="the action to ask for; 'permissions' lists what is held, 'whoami' describes "
+        "the account, 'chat-info' the other side of a chat under its read grant",
+    )
     parser.add_argument(
         "--chat",
         help="the chat identifier the action applies to; 'saved' is the account's saved messages",
