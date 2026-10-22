@@ -27,8 +27,10 @@ class _Status:
 
 def run(scenario):
     """Run a scenario under a deadline. A stream waits for messages by design, so a
-    broken one waits forever, and a test has to turn that into a failure, not a hang."""
-    asyncio.run(asyncio.wait_for(scenario(), timeout=5))
+    broken one waits forever, and a test has to turn that into a failure, not a hang.
+    A scenario takes milliseconds; the deadline stays short because one defect can stall
+    every test here at once, and the defect run gives the whole suite a fixed budget."""
+    asyncio.run(asyncio.wait_for(scenario(), timeout=1))
 
 
 @pytest.fixture
@@ -238,7 +240,7 @@ def test_the_client_reads_a_live_stream_line_by_line(world, tmp_path):
     # tg.stream blocks in a worker thread, which the deadline cannot cancel and which
     # the loop waits for on its way out, so a socket timeout is what ends a failed run
     previous = socket.getdefaulttimeout()
-    socket.setdefaulttimeout(3)
+    socket.setdefaulttimeout(1)
     try:
         run(scenario)
     finally:
