@@ -3,51 +3,32 @@
 
 This half holds no secret and makes no decision. It sends what it is told and prints what
 comes back, so the standard library is all it needs and it runs under whatever python is
-at hand. Everything that decides lives behind the socket.
+at hand. Everything that decides lives behind the socket. Talking to the socket is
+agentsock.py beside this file.
 """
 
 import argparse
 import base64
 import json
 import os
-import socket
 import sys
+
+from agentsock import SentLog, ask, stream  # noqa: F401  — stream is for tg-watch.py
 
 DEFAULT_SOCKET = os.environ.get("TG_SOCKET", "/run/tg-agent/socket")
 
-# Messages this client sent, one "CHAT ID" per line, so a watcher can tell the agent's own
-# sends from what the user sent from a phone: the server marks both as the account's
-SENT_KEPT = 1000
-
-
-def sent_log():
-    if os.environ.get("TG_SENT_LOG"):
-        return os.environ["TG_SENT_LOG"]
-    state = os.environ.get("XDG_STATE_HOME") or os.path.expanduser("~/.local/state")
-    return os.path.join(state, "tg-agent", "sent")
+# Messages this client sent, so a watcher can tell the agent's own sends from what the
+# user sent from a phone: the server marks both as the account's
+SENT = SentLog("TG_SENT_LOG", "tg-agent")
 
 
 def remember_sent(chat, message_id):
-    path = sent_log()
-    os.makedirs(os.path.dirname(path), exist_ok=True)
-    try:
-        with open(path, encoding="utf-8") as kept:
-            lines = kept.read().splitlines()
-    except FileNotFoundError:
-        lines = []
-    lines = (lines + [f"{chat} {message_id}"])[-SENT_KEPT:]
-    with open(path, "w", encoding="utf-8") as kept:
-        kept.write("\n".join(lines) + "\n")
+    SENT.remember(chat, message_id)
 
 
 def sent_ids(chat):
     """The identifiers this client sent into one chat, as it was named then."""
-    try:
-        with open(sent_log(), encoding="utf-8") as kept:
-            pairs = [line.split() for line in kept]
-    except FileNotFoundError:
-        return set()
-    return {int(pair[1]) for pair in pairs if len(pair) == 2 and pair[0] == str(chat)}
+    return {int(identifier) for identifier in SENT.ids(chat)}
 
 
 def build_parser():
@@ -147,35 +128,6 @@ def request_from(options):
             "data": base64.b64encode(data).decode(),
         }
     return request
-
-
-def ask(path, request):
-    with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as connection:
-        connection.connect(path)
-        try:
-            connection.sendall(json.dumps(request).encode() + b"\n")
-        except (BrokenPipeError, ConnectionResetError):
-            # The service stops reading a request that outgrows its limit and answers
-            # at once, so the answer may already be waiting behind the broken send
-            pass
-        answer = b""
-        while not answer.endswith(b"\n"):
-            block = connection.recv(65536)
-            if not block:
-                break
-            answer += block
-    return json.loads(answer.decode())
-
-
-def stream(path, request):
-    """Send one request and yield every answer line until the service closes the stream."""
-    with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as connection:
-        connection.connect(path)
-        connection.sendall(json.dumps(request).encode() + b"\n")
-        with connection.makefile("rb") as lines:
-            for line in lines:
-                if line.strip():
-                    yield json.loads(line.decode())
 
 
 def main(argv=None):
