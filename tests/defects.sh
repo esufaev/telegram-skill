@@ -395,8 +395,8 @@ defect 'push/recheck' 'tg_agentd/handler.py' \
   'withdrawing read from a chat does not stop a running subscription, so messages keep reaching the agent after the user took the grant back'
 
 defect 'push/chat' 'tg_agentd/hub.py' \
-  'for subscription in list(self._by_chat.get(chat, ())):' \
-  'for subscription in [s for held in self._by_chat.values() for s in held]:' \
+  'for subscription in list(self._by_key.get(key, ())):' \
+  'for subscription in [s for held in self._by_key.values() for s in held]:' \
   'a subscriber to one chat receives the messages of every chat on the account, granted or not'
 
 defect 'push/unsubscribe' 'tg_agentd/handler.py' \

@@ -92,7 +92,7 @@ class Server:
         """Write each answer of a subscription until it ends or the reader leaves.
 
         A reader that closes its end is noticed at once, not at the next message: the
-        subscription would otherwise hold a queue in the hub for a chat nobody watches.
+        subscription would otherwise hold a queue in the hub for a source nobody watches.
         """
         answers = self._handler.stream(request)
         left = asyncio.ensure_future(reader.read())

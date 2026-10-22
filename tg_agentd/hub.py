@@ -1,9 +1,9 @@
-"""Hand each new message to whoever subscribed to its chat.
+"""Hand each new message to whoever subscribed to its source.
 
-The session receives every update Telegram pushes, for every chat, whether anyone is
-listening or not. The hub keeps a bounded queue per subscriber, so a reader that stops
-reading costs a fixed amount of memory and is then cut off: it can catch up by reading
-history from the last message it saw, which the service cannot do on its behalf.
+The service receives every new message for every source, whether anyone is listening or
+not. The hub keeps a bounded queue per subscriber, so a reader that stops reading costs a
+fixed amount of memory and is then cut off: it can catch up by reading history from the
+last message it saw, which the service cannot do on its behalf.
 """
 
 import asyncio
@@ -18,7 +18,7 @@ class FellBehind(Exception):
 
 
 class Subscription:
-    """One subscriber's queue of messages from one chat."""
+    """One subscriber's queue of messages from one source."""
 
     def __init__(self, depth):
         self._depth = depth
@@ -47,25 +47,25 @@ class Subscription:
 
 
 class Hub:
-    """Subscriptions by chat identifier, the marked one that permission files use."""
+    """Subscriptions by source, keyed the way the permission files name it."""
 
     def __init__(self):
         self.depth = DEPTH
-        self._by_chat = collections.defaultdict(set)
+        self._by_key = collections.defaultdict(set)
 
-    def subscribe(self, chat):
+    def subscribe(self, key):
         subscription = Subscription(self.depth)
-        self._by_chat[chat].add(subscription)
+        self._by_key[key].add(subscription)
         return subscription
 
-    def unsubscribe(self, chat, subscription):
-        self._by_chat[chat].discard(subscription)
-        if not self._by_chat[chat]:
-            del self._by_chat[chat]
+    def unsubscribe(self, key, subscription):
+        self._by_key[key].discard(subscription)
+        if not self._by_key[key]:
+            del self._by_key[key]
 
-    def publish(self, chat, message):
-        for subscription in list(self._by_chat.get(chat, ())):
+    def publish(self, key, message):
+        for subscription in list(self._by_key.get(key, ())):
             subscription.offer(message)
 
-    def count(self, chat):
-        return len(self._by_chat.get(chat, ()))
+    def count(self, key):
+        return len(self._by_key.get(key, ()))
