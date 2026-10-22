@@ -33,14 +33,13 @@ defect 'presence/inverted' 'tg_agentd/client.py' \
 defect 'read/acknowledge' 'tg_agentd/client.py' \
   "$(
     cat <<'EOF'
-        return await self._telethon.get_messages(chat_id, limit=limit, **kwargs)
+        messages = await self._telethon.get_messages(chat_id, limit=limit, **kwargs)
 EOF
   )" \
   "$(
     cat <<'EOF'
-        found = await self._telethon.get_messages(chat_id, limit=limit, **kwargs)
+        messages = await self._telethon.get_messages(chat_id, limit=limit, **kwargs)
         await self._telethon.send_read_acknowledge(chat_id, message=None)
-        return found
 EOF
   )" \
   'every chat the agent reads is marked read for the far side, so correspondents see the user reading at times they were not there'
@@ -247,3 +246,90 @@ EOF
   )" \
   '        return value' \
   'a channel listed in a folder is addressed by its raw identifier, which names a user that does not exist, so no grant through that folder reaches a channel'
+
+# Markup. Telethon parses on this side, and an omitted mode means its client default
+defect 'markup/none' 'tg_agentd/client.py' \
+  "$(
+    cat <<'EOF'
+PARSED = {"md": "md", "html": "html", "none": None}
+EOF
+  )" \
+  "$(
+    cat <<'EOF'
+PARSED = {"md": "md", "html": "html", "none": "md"}
+EOF
+  )" \
+  'text the agent asked to send literally is parsed as Markdown, so asterisks and underscores in it vanish or turn into formatting'
+
+defect 'markup/unstated' 'tg_agentd/client.py' \
+  'chat_id, text, reply_to=reply_to, parse_mode=PARSED[markup]' \
+  'chat_id, text, reply_to=reply_to' \
+  'the markup named in a request is ignored, so a message goes out in whatever Telethon defaults to'
+
+defect 'markup/premium' 'tg_agentd/handler.py' \
+  ') and not await self._client.premium():' \
+  ') and False:' \
+  'a custom emoji from an account without Premium is sent, and the server drops it from the message without a word'
+
+# Rich messages. The server parses them, so the text has to reach it as written
+defect 'rich/send' 'tg_agentd/client.py' \
+  "$(
+    cat <<'EOF'
+        if markup == RICH:
+            peer = await self._telethon.get_input_entity(chat_id)
+            return await self._rich(
+                peer,
+                SendMessageRequest(
+EOF
+  )" \
+  "$(
+    cat <<'EOF'
+        if False:
+            peer = await self._telethon.get_input_entity(chat_id)
+            return await self._rich(
+                peer,
+                SendMessageRequest(
+EOF
+  )" \
+  'a rich message goes out through the client-side parser, so its tables and formulas arrive as raw Markdown'
+
+defect 'rich/caption' 'tg_agentd/handler.py' \
+  'if request.get("file") and markup == RICH:' \
+  'if False:' \
+  'a rich caption fails deep in the client with an error that names a dictionary key instead of the reason'
+
+defect 'rich/read' 'tg_agentd/handler.py' \
+  "$(
+    cat <<'EOF'
+        if content is not None
+        else getattr(message, "text", ""),
+EOF
+  )" \
+  "$(
+    cat <<'EOF'
+        if False
+        else getattr(message, "text", ""),
+EOF
+  )" \
+  'a rich message reads as empty, so the agent answers a table or a formula it never saw'
+
+defect 'rich/partial' 'tg_agentd/client.py' \
+  'if content is not None and getattr(content, "part", None):' \
+  'if False:' \
+  'a long rich message reads as its first part only, and the agent takes the fragment for the whole'
+
+# The watcher. It runs under hooks, so its mark and its filter decide what the agent sees
+defect 'watch/echo-all' 'tg-watch.py' \
+  'if message.get("out") and message["id"] in own:' \
+  'if message.get("out"):' \
+  'what the user writes from a phone disappears from the watch along with the agent'\''s own sends'
+
+defect 'watch/echo-none' 'tg-watch.py' \
+  'if message.get("out") and message["id"] in own:' \
+  'if False:' \
+  'every message the agent sends comes back to it as news, and it may answer itself'
+
+defect 'watch/state' 'tg-watch.py' \
+  '                write_mark(options.state, since)' \
+  '                pass' \
+  'a watcher started again by a hook never moves its mark, so it reports the same messages on every run'
