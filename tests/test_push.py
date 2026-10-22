@@ -235,7 +235,14 @@ def test_the_client_reads_a_live_stream_line_by_line(world, tmp_path):
         answers.close()
         served.cancel()
 
-    run(scenario)
+    # tg.stream blocks in a worker thread, which the deadline cannot cancel and which
+    # the loop waits for on its way out, so a socket timeout is what ends a failed run
+    previous = socket.getdefaulttimeout()
+    socket.setdefaulttimeout(3)
+    try:
+        run(scenario)
+    finally:
+        socket.setdefaulttimeout(previous)
 
 
 def test_an_ordinary_request_on_the_socket_still_gets_one_answer(world, tmp_path):
