@@ -16,6 +16,7 @@ import io
 
 from . import folders, media, permissions, profile, rich, verbs
 from .client import DEFAULT_MARKUP, MARKUPS, RICH
+from .hub import FellBehind
 
 # Actions that are not permissions of their own, and the permission each one takes.
 # Describing a chat's other party is reading about them, so it takes what reading does
@@ -91,11 +92,11 @@ class Handler:
                 None, action, profile.describe(await self._client.me(), private=False)
             )
 
-        # Saved messages are the account's chat with itself, so "saved" stands for the
-        # account's own identifier. The grant stays in the file named by that number
-        for key in ("chat", "to"):
-            if request.get(key) == SAVED:
-                request = {**request, key: await self._client.own_id()}
+        # A subscription is a stream of answers, which the socket serves through stream
+        if action == "subscribe":
+            return _refused("subscribe streams, so it is served by stream, not handle")
+
+        request = await self._saved(request)
 
         # The target decides which vocabulary applies, not the word: "read" and "media"
         # appear in both tables and mean a different reach in each
@@ -110,16 +111,9 @@ class Handler:
             return _refused(f"no action is called {action!r}")
 
         chat = permissions.as_identifier(request.get("chat"))
-        decision = self._store.chat_may(chat, needs)
-        through = None
-        if not decision.allowed:
-            # A folder granting read reaches the chats inside it. Its own file is checked
-            # first, so a chat the user decided on personally keeps that decision
-            through = await self._folder_covering(chat, needs)
-            if through is None:
-                # The remedy names the grant, which differs from the action for topics
-                # and chat-info: a file naming either word would be refused as unknown
-                return _refused(decision.reason, remedy=_remedy(chat, needs))
+        refusal, by, through = await self._grant(chat, needs)
+        if refusal is not None:
+            return refusal
 
         # A download has to land somewhere the user can reach. Inventing a path would put
         # the account's files wherever this process happens to be running
@@ -136,14 +130,73 @@ class Handler:
                 )
 
         result = await self._perform(action, request)
-        answer = _allowed(decision.by or through["by"], action, result)
-        if through is not None:
-            answer["through_folder"] = {
-                "id": through["id"],
-                "title": through["title"],
-                "chats": through["chats"],
-            }
-        return answer
+        return _with_folder(_allowed(by, action, result), through)
+
+    async def stream(self, request):
+        """Answer a subscription: one answer for the grant, then one per new message.
+
+        The grant is decided again for every message, so withdrawing read stops the
+        stream at the next message rather than at the next connection. The subscription
+        is taken before the first answer, so nothing that lands in between is lost.
+        """
+        try:
+            request = await self._saved(request)
+            chat = permissions.as_identifier(request.get("chat"))
+            refusal, by, through = await self._grant(chat, "read")
+        except permissions.BadIdentifier as bad:
+            yield _refused(f"bad identifier: {bad}")
+            return
+        except permissions.PermissionFileError as broken:
+            yield _refused(str(broken))
+            return
+        if refusal is not None:
+            yield refusal
+            return
+        subscription = self._client.hub.subscribe(chat)
+        try:
+            yield _with_folder(_allowed(by, "subscribe", {"chat": chat}), through)
+            while True:
+                try:
+                    message = await subscription.next()
+                except FellBehind:
+                    yield _refused(
+                        "this subscriber fell behind and missed messages; read from the "
+                        "last one seen, then subscribe again"
+                    )
+                    return
+                try:
+                    refusal, _, _ = await self._grant(chat, "read")
+                except permissions.PermissionFileError as broken:
+                    refusal = _refused(str(broken))
+                if refusal is not None:
+                    yield refusal
+                    return
+                await self._client.complete(chat, message)
+                yield {"ok": True, "message": _message(message)}
+        finally:
+            self._client.hub.unsubscribe(chat, subscription)
+
+    async def _saved(self, request):
+        """Saved messages are the account's chat with itself, so "saved" stands for the
+        account's own identifier. The grant stays in the file named by that number."""
+        for key in ("chat", "to"):
+            if request.get(key) == SAVED:
+                request = {**request, key: await self._client.own_id()}
+        return request
+
+    async def _grant(self, chat, needs):
+        """Who allows this chat the word it needs: (None, by, through), or (refusal, ...)."""
+        decision = self._store.chat_may(chat, needs)
+        if decision.allowed:
+            return None, decision.by, None
+        # A folder granting read reaches the chats inside it. Its own file is checked
+        # first, so a chat the user decided on personally keeps that decision
+        through = await self._folder_covering(chat, needs)
+        if through is None:
+            # The remedy names the grant, which differs from the action for topics
+            # and chat-info: a file naming either word would be refused as unknown
+            return _refused(decision.reason, remedy=_remedy(chat, needs)), None, None
+        return None, through["by"], through
 
     async def _folder_covering(self, chat, action):
         """A granted folder holding this chat, or None.
@@ -454,6 +507,17 @@ def _allowed(by, action, result):
         "action": action,
         "result": result,
     }
+
+
+def _with_folder(answer, through):
+    """Name the folder an answer was allowed through, when one was."""
+    if through is not None:
+        answer["through_folder"] = {
+            "id": through["id"],
+            "title": through["title"],
+            "chats": through["chats"],
+        }
+    return answer
 
 
 def _refused(error, remedy=None):

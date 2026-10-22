@@ -6,24 +6,26 @@ removes a message for everyone unless told otherwise. This wrapper exposes one m
 action the permissions name, and each states what Telethon would otherwise assume.
 """
 
-from telethon import utils
+from telethon import events, utils
 from telethon.tl.functions.account import UpdateStatusRequest
 from telethon.tl.functions.channels import GetFullChannelRequest
-from telethon.tl.functions.users import GetFullUserRequest
 from telethon.tl.functions.messages import (
     EditMessageRequest,
     GetDialogFiltersRequest,
-    GetFullChatRequest,
     GetForumTopicsRequest,
+    GetFullChatRequest,
     GetRichMessageRequest,
     SendMessageRequest,
     UpdateDialogFilterRequest,
 )
+from telethon.tl.functions.users import GetFullUserRequest
 from telethon.tl.types import (
     InputReplyToMessage,
     InputRichMessageMarkdown,
     MessageEntityCustomEmoji,
 )
+
+from .hub import Hub
 
 # The markups Telethon parses on this side, and what it is told for each. The server
 # receives only entities, so it never sees which of these was used. "none" is an explicit
@@ -48,6 +50,7 @@ class Client:
     def __init__(self, telethon):
         self._telethon = telethon
         self._own_id = None
+        self.hub = Hub()
 
     async def start(self):
         """Connect, then say the account is away.
@@ -61,6 +64,12 @@ class Client:
         # resolved without it. A fresh session has an empty cache, so a chat named by
         # number reaches the account as a stranger until one pass has filled it
         await self._telethon.get_dialogs()
+        # Updates arrive on the open session at no cost of their own, so subscribers are
+        # told of a message as it lands. Telethon reports both directions by default
+        self._telethon.add_event_handler(self._arrived, events.NewMessage())
+
+    async def _arrived(self, event):
+        self.hub.publish(event.chat_id, event.message)
 
     async def stop(self):
         await self._telethon.disconnect()
@@ -80,17 +89,18 @@ class Client:
         """
         messages = await self._telethon.get_messages(chat_id, limit=limit, **kwargs)
         for message in messages:
-            content = getattr(message, "rich_message", None)
-            if content is not None and getattr(content, "part", None):
-                answer = await self._telethon(
-                    GetRichMessageRequest(peer=chat_id, id=message.id)
-                )
-                whole = [
-                    m for m in getattr(answer, "messages", []) if m.id == message.id
-                ]
-                if whole and whole[0].rich_message is not None:
-                    message.rich_message = whole[0].rich_message
+            await self.complete(chat_id, message)
         return messages
+
+    async def complete(self, chat_id, message):
+        """Fetch the rest of a rich message the server sent only in part."""
+        content = getattr(message, "rich_message", None)
+        if content is not None and getattr(content, "part", None):
+            answer = await self._telethon(GetRichMessageRequest(peer=chat_id, id=message.id))
+            whole = [m for m in getattr(answer, "messages", []) if m.id == message.id]
+            if whole and whole[0].rich_message is not None:
+                message.rich_message = whole[0].rich_message
+        return message
 
     async def dialogs(self, **kwargs):
         """Every dialog the account has, unread counts included.

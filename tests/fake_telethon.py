@@ -139,6 +139,17 @@ class FakeClient:
     def _record(self, name, **kwargs):
         self.calls.append((name, kwargs))
 
+    # Updates. Telethon calls each registered handler with an event for every update the
+    # session receives; emit plays the server's part
+
+    def add_event_handler(self, callback, event=None):
+        self._record("add_event_handler", event=type(event).__name__)
+        self.handlers = getattr(self, "handlers", []) + [callback]
+
+    async def emit(self, chat_id, message):
+        for callback in getattr(self, "handlers", []):
+            await callback(_NewMessage(chat_id=chat_id, message=message))
+
     def called(self, name):
         """Every call of this name, as a list of keyword dictionaries."""
         return [kwargs for called, kwargs in self.calls if called == name]
@@ -297,6 +308,14 @@ class _Filters:
     """What GetDialogFilters answers with: the folders, under a field of their own."""
 
     filters: list
+
+
+@dataclass
+class _NewMessage:
+    """What a NewMessage handler receives: the chat's marked identifier and the message."""
+
+    chat_id: int
+    message: object
 
 
 @dataclass

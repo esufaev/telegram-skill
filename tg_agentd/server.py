@@ -52,7 +52,12 @@ class Server:
     async def _client(self, reader, writer):
         try:
             async for line in reader:
-                await self._exchange(line, writer)
+                request = await self._exchange(line, writer)
+                if request is not None:
+                    # A subscription keeps the connection for itself until either end
+                    # leaves, so nothing after it on this connection is a request
+                    await self._stream(request, reader, writer)
+                    return
         except ValueError:
             # The stream raises this when a line outgrows the limit. The rest of that
             # line is still unread, so the connection cannot continue, but the caller
@@ -67,14 +72,45 @@ class Server:
             writer.close()
 
     async def _exchange(self, line, writer):
+        """Answer one request, or hand back a subscription for the caller to stream."""
         line = line.strip()
         if not line:
-            return
+            return None
         try:
             request = json.loads(line)
         except json.JSONDecodeError as broken:
             answer = {"ok": False, "error": f"not one JSON object per line: {broken}"}
         else:
+            if isinstance(request, dict) and request.get("action") == "subscribe":
+                return request
             answer = await self._handler.handle(request)
         writer.write(json.dumps(answer).encode() + b"\n")
         await writer.drain()
+        return None
+
+    async def _stream(self, request, reader, writer):
+        """Write each answer of a subscription until it ends or the reader leaves.
+
+        A reader that closes its end is noticed at once, not at the next message: the
+        subscription would otherwise hold a queue in the hub for a chat nobody watches.
+        """
+        answers = self._handler.stream(request)
+        left = asyncio.ensure_future(reader.read())
+        try:
+            while True:
+                following = asyncio.ensure_future(anext(answers))
+                done, _ = await asyncio.wait(
+                    {following, left}, return_when=asyncio.FIRST_COMPLETED
+                )
+                if following not in done:
+                    following.cancel()
+                    return
+                try:
+                    answer = following.result()
+                except StopAsyncIteration:
+                    return
+                writer.write(json.dumps(answer).encode() + b"\n")
+                await writer.drain()
+        finally:
+            left.cancel()
+            await answers.aclose()

@@ -167,6 +167,17 @@ def ask(path, request):
     return json.loads(answer.decode())
 
 
+def stream(path, request):
+    """Send one request and yield every answer line until the service closes the stream."""
+    with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as connection:
+        connection.connect(path)
+        connection.sendall(json.dumps(request).encode() + b"\n")
+        with connection.makefile("rb") as lines:
+            for line in lines:
+                if line.strip():
+                    yield json.loads(line.decode())
+
+
 def main(argv=None):
     options = build_parser().parse_args(argv)
     try:
