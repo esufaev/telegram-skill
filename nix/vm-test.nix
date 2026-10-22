@@ -44,6 +44,9 @@ pkgs.testers.runNixOSTest {
       bob.isNormalUser = true;
     };
 
+    # The clients of the shipped skill run on whatever python is at hand
+    environment.systemPackages = [ pkgs.python3 ];
+
     services.tg-agent = {
       enable = true;
       package = probe;
@@ -57,7 +60,12 @@ pkgs.testers.runNixOSTest {
   testScript =
     { nodes, ... }:
     let
-      inherit (nodes.machine.services.tg-agent) outboxDir outboxGroup socketPath;
+      inherit (nodes.machine.services.tg-agent)
+        outboxDir
+        outboxGroup
+        skill
+        socketPath
+        ;
     in
     ''
       machine.wait_for_unit("sockets.target")
@@ -79,5 +87,13 @@ pkgs.testers.runNixOSTest {
           assert machine.succeed("stat -c '%U %a' ${socketPath}").strip() == "alice 600"
           machine.succeed("su alice -c 'test -w ${socketPath}'")
           machine.fail("su bob -c 'test -w ${socketPath}'")
+
+      # The skill a declarative install hands an agent: its clients have to run from it alone,
+      # the socket client they import included
+      with subtest("the shipped skill's clients start from the skill itself"):
+          machine.succeed("su alice -c 'python3 ${skill}/tg.py --help'")
+          machine.succeed("su alice -c 'python3 ${skill}/tg-watch.py --help'")
+          machine.succeed("test -f ${skill}/SKILL.md && test -d ${skill}/references")
+          machine.fail("test -e ${skill}/tests")
     '';
 }

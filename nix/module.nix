@@ -30,6 +30,35 @@ in
       description = "The service to run";
     };
 
+    skill = mkOption {
+      type = types.path;
+      readOnly = true;
+      # What an agent loads, at the revision of the service it talks to, so the skill never
+      # names an action the running service lacks. Tests, checks and the Nix code stay out
+      default = builtins.path {
+        name = "telegram-skill";
+        path = self;
+        filter =
+          path: _:
+          let
+            relative = lib.removePrefix "${toString self}/" (toString path);
+          in
+          lib.elem relative [
+            "SKILL.md"
+            "tg.py"
+            "tg-watch.py"
+            "agentsock.py"
+          ]
+          || relative == "references"
+          || lib.hasPrefix "references/" relative;
+      };
+      defaultText = "the skill's directory at this flake's revision";
+      description = ''
+        The skill an agent loads beside this service, for a configuration that installs
+        skills declaratively
+      '';
+    };
+
     apiIdFile = mkOption {
       type = types.path;
       description = ''

@@ -6,6 +6,7 @@ Kept in the shape of [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), d
 
 ### Added
 
+- `services.tg-agent.skill`, read-only: the skill's own files at the service's revision, for a configuration that installs skills declaratively
 - `subscribe`: the service passes on each new message of a chat as Telegram pushes it, under the chat's `read` grant, decided again for every message. A subscriber that stops reading is cut off with a reason rather than held in memory
 - `subscribe` takes a `topic`, and passes on only that forum topic
 - `tg-watch.py` follows a chat or a topic through `subscribe` and shows a message as it lands. A stream the service closed is opened again at once; `--interval` is now only the wait after the service could not be reached or refused, and defaults to 5 seconds. A `--once` run still reads once
