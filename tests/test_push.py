@@ -25,6 +25,12 @@ class _Status:
         self.offline = offline
 
 
+def run(scenario):
+    """Run a scenario under a deadline. A stream waits for messages by design, so a
+    broken one waits forever, and a test has to turn that into a failure, not a hang."""
+    asyncio.run(asyncio.wait_for(scenario(), timeout=5))
+
+
 @pytest.fixture
 def world(tmp_path, monkeypatch):
     (tmp_path / "chats").mkdir()
@@ -80,7 +86,7 @@ def test_subscribing_needs_read(world):
         )
         assert account.hub.count(777) == 0
 
-    asyncio.run(scenario())
+    run(scenario)
 
 
 def test_a_new_message_in_the_chat_arrives_and_others_do_not(world):
@@ -98,7 +104,7 @@ def test_a_new_message_in_the_chat_arrives_and_others_do_not(world):
         await stream.aclose()
         assert account.hub.count(777) == 0
 
-    asyncio.run(scenario())
+    run(scenario)
 
 
 def test_the_grant_is_decided_again_for_every_message(world):
@@ -117,7 +123,7 @@ def test_the_grant_is_decided_again_for_every_message(world):
             await anext(stream)
         assert account.hub.count(777) == 0
 
-    asyncio.run(scenario())
+    run(scenario)
 
 
 def test_saved_subscribes_to_the_accounts_own_chat(world):
@@ -130,7 +136,7 @@ def test_saved_subscribes_to_the_accounts_own_chat(world):
         assert (await anext(stream))["message"]["text"] == "note"
         await stream.aclose()
 
-    asyncio.run(scenario())
+    run(scenario)
 
 
 def test_a_rich_message_sent_in_part_arrives_whole(world):
@@ -149,7 +155,7 @@ def test_a_rich_message_sent_in_part_arrives_whole(world):
         assert (await anext(stream))["message"]["text"] == "whole"
         await stream.aclose()
 
-    asyncio.run(scenario())
+    run(scenario)
 
 
 def test_a_subscriber_that_falls_behind_is_told_to_catch_up(world, monkeypatch):
@@ -166,7 +172,7 @@ def test_a_subscriber_that_falls_behind_is_told_to_catch_up(world, monkeypatch):
         assert "behind" in answers[-1]["error"]
         assert account.hub.count(777) == 0
 
-    asyncio.run(scenario())
+    run(scenario)
 
 
 # Over the socket
@@ -199,7 +205,7 @@ def test_the_socket_streams_events_and_lets_go_when_the_reader_leaves(world, tmp
         assert account.hub.count(777) == 0
         served.cancel()
 
-    asyncio.run(scenario())
+    run(scenario)
 
 
 def test_the_client_reads_a_live_stream_line_by_line(world, tmp_path):
@@ -229,7 +235,7 @@ def test_the_client_reads_a_live_stream_line_by_line(world, tmp_path):
         answers.close()
         served.cancel()
 
-    asyncio.run(scenario())
+    run(scenario)
 
 
 def test_an_ordinary_request_on_the_socket_still_gets_one_answer(world, tmp_path):
@@ -251,7 +257,7 @@ def test_an_ordinary_request_on_the_socket_still_gets_one_answer(world, tmp_path
         assert answer["ok"] is True
         served.cancel()
 
-    asyncio.run(scenario())
+    run(scenario)
 
 
 def test_starting_registers_for_new_messages_once(world):
@@ -259,4 +265,4 @@ def test_starting_registers_for_new_messages_once(world):
         service, account, fake, grant = await started(world)
         assert [c["event"] for c in fake.called("add_event_handler")] == ["NewMessage"]
 
-    asyncio.run(scenario())
+    run(scenario)
