@@ -104,3 +104,66 @@ def test_a_negative_identifier_is_ordinary(store):
     # Groups are negative and channels carry a -100 prefix, so the sign is data
     write(store, "chats", "-1001234567890", "allow: read\n")
     assert store.chat_may("-1001234567890", "read").allowed
+
+
+def test_a_default_file_grants_every_chat_without_its_own(store):
+    write(store, "chats", permissions.DEFAULT, "allow: read, media\n")
+    assert store.chat_may(777, "read").allowed
+    assert store.chat_may(-1001234567890, "media").allowed
+
+
+def test_a_chats_own_file_replaces_the_default(store):
+    write(store, "chats", permissions.DEFAULT, "allow: read, media\n")
+    write(store, "chats", "777", "allow: read\n")
+    assert not store.chat_may(777, "media").allowed
+    assert store.chat_may(778, "media").allowed
+
+
+def test_the_answer_names_the_default_when_it_decided(store):
+    write(store, "chats", permissions.DEFAULT, "allow: read\n")
+    assert "default" in store.chat_may(777, "read").reason
+    assert "default" in store.chat_may(777, "media").reason
+
+
+def test_a_flag_falls_back_to_the_default(store):
+    write(store, "chats", permissions.DEFAULT, "allow: reply\nmark-read-on-reply: yes\n")
+    assert store.chat_flag(777, "mark-read-on-reply") is True
+
+
+def test_the_survey_lists_the_default_grant(store):
+    write(store, "chats", permissions.DEFAULT, "allow: read, media\n")
+    assert store.survey()["chats"]["default"] == ["media", "read"]
+
+
+def test_an_undefined_word_in_the_default_is_an_error(store):
+    write(store, "chats", permissions.DEFAULT, "allow: shout\n")
+    with pytest.raises(permissions.PermissionFileError):
+        store.chat_may(777, "read")
+
+
+def test_a_default_folder_file_grants_every_folder_without_its_own(store):
+    write(store, "folders", permissions.DEFAULT, "allow: digest\n")
+    assert store.folder_may(5, "digest").allowed
+    assert "default" in store.folder_may(5, "digest").reason
+
+
+def test_a_folders_own_file_replaces_the_default(store):
+    write(store, "folders", permissions.DEFAULT, "allow: digest\n")
+    write(store, "folders", "5", "allow: folder-read\n")
+    assert not store.folder_may(5, "digest").allowed
+    assert store.folder_may(6, "digest").allowed
+
+
+def test_a_default_folder_granting_content_still_refuses_folder_edit(store):
+    write(store, "folders", permissions.DEFAULT, "allow: digest, folder-edit\n")
+    assert not store.folder_may(5, "folder-edit").allowed
+
+
+def test_a_folder_field_does_not_come_from_the_default(store):
+    write(store, "folders", permissions.DEFAULT, "allow: digest\nmembers: recorded\n")
+    assert store.folder_field(5, "members") == ""
+
+
+def test_the_survey_lists_the_default_folder_grant(store):
+    write(store, "folders", permissions.DEFAULT, "allow: digest\n")
+    assert store.survey()["folders"]["default"] == ["digest"]

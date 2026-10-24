@@ -6,6 +6,7 @@ Kept in the shape of [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), d
 
 ### Added
 
+- `chats/default.conf` and `folders/default.conf` apply to every target of their kind without a file of its own, the account-wide form of mail's `allow:` line. A target's own file replaces the default whole, the survey lists it as `default`, and every answer it decides says so
 - `--qr` for `--login`: sign in by scanning a QR code with a device that is already signed in, so no code goes through Telegram or SMS. A token that expires is replaced and shown again
 - The login says where Telegram sent the code and how many digits it holds: the app, SMS, a call, and the other `auth.SentCodeType` constructors
 - A flood wait names the seconds Telegram asks to wait, instead of leaving the prompt open with no code

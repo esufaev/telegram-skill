@@ -2,7 +2,9 @@
 
 The files live in a directory the agent cannot write. The agent proposes an edit and the
 user applies it; nothing here writes. A missing file is a refusal, not an error, so a
-chat nobody granted anything on behaves the same as one that does not exist.
+target nobody granted anything on behaves the same as one that does not exist — unless
+`chats/default.conf` or `folders/default.conf` exists, which is a grant the user wrote
+for every target without a file of its own.
 """
 
 import re
@@ -17,6 +19,10 @@ from . import verbs
 IDENTIFIER = re.compile(r"\A-?[0-9]{1,20}\Z")
 
 TRUE_WORDS = frozenset({"yes", "true", "on", "1"})
+
+# The permission file that applies to every target of its kind without a file of its
+# own. The name is not a Telegram identifier, so no chat or folder can shadow it
+DEFAULT = "default"
 
 
 class BadIdentifier(ValueError):
@@ -83,9 +89,11 @@ class Store:
         """
         if action not in verbs.FOLDER_ACTIONS:
             raise UnknownAction(f"no folder action is called {action!r}")
-        granted = self._granted_words("folders", folder_id, verbs.FOLDER_ACTIONS)
-        if granted is None:
+        effective = self._effective("folders", folder_id)
+        if effective is None:
             return self._no_file("folders", folder_id)
+        fields, path, by_default = effective
+        granted = self._words(fields, path, "folders", verbs.FOLDER_ACTIONS)
         if verbs.widens_reach(action) and verbs.grants_content(granted):
             return Decision(
                 False,
@@ -93,7 +101,10 @@ class Store:
                 f"folder {folder_id} grants content, so it cannot be edited: "
                 f"holds {', '.join(sorted(granted))}",
             )
-        return self._weigh(granted, action, verbs.FOLDER_ACTIONS, "folder", folder_id)
+        return self._as_default(
+            self._weigh(granted, action, verbs.FOLDER_ACTIONS, "folder", folder_id),
+            by_default,
+        )
 
     def survey(self):
         """Every target that holds a grant, with the actions each one expands to.
@@ -116,7 +127,10 @@ class Store:
         for path in sorted(directory.glob("*.conf")):
             name = path.stem
             try:
-                words = self._granted_words(kind, name, table) or set()
+                if name == DEFAULT:
+                    words = self._words(self._read_fields(path) or {}, path, kind, table)
+                else:
+                    words = self._granted_words(kind, name, table) or set()
             except (PermissionFileError, BadIdentifier) as broken:
                 held[name] = [str(broken)]
                 continue
@@ -141,10 +155,41 @@ class Store:
         return fields.get(name, "").strip()
 
     def _decide(self, kind, identifier, action, table):
-        granted = self._granted_words(kind, identifier, table)
-        if granted is None:
+        effective = self._effective(kind, identifier)
+        if effective is None:
             return self._no_file(kind, identifier)
-        return self._weigh(granted, action, table, kind.rstrip("s"), identifier)
+        fields, path, by_default = effective
+        granted = self._words(fields, path, kind, table)
+        return self._as_default(
+            self._weigh(granted, action, table, kind.rstrip("s"), identifier),
+            by_default,
+        )
+
+    def _effective(self, kind, identifier):
+        """The file that decides, its path, and whether it is the default one.
+
+        A target with no file of its own falls back to `<kind>/default.conf`, so the
+        user can grant one action table-wide without a file per target.
+        """
+        path = self._path(kind, identifier)
+        fields = self._read_fields(path)
+        if fields is not None:
+            return fields, path, False
+        path = self.root / kind / f"{DEFAULT}.conf"
+        fields = self._read_fields(path)
+        if fields is None:
+            return None
+        return fields, path, True
+
+    def _as_default(self, decision, by_default):
+        """Name the default grant in the reason, so a wide grant cannot pass unspoken."""
+        if not by_default:
+            return decision
+        return Decision(
+            decision.allowed,
+            decision.by,
+            f"{decision.reason} by the default grant",
+        )
 
     def _weigh(self, granted, action, table, noun, identifier):
         by = verbs.granted(action, granted, table)
@@ -165,18 +210,30 @@ class Store:
         fields = self._fields(kind, identifier)
         if fields is None:
             return None
+        return self._words(fields, self._path(kind, identifier), kind, table)
+
+    def _words(self, fields, path, kind, table):
+        """The words a parsed file grants, refused when one names no action."""
         words = [w.strip() for w in fields.get("allow", "").split(",") if w.strip()]
         unknown = verbs.unknown_words(words, table)
         if unknown:
             raise PermissionFileError(
-                f"{self._path(kind, identifier)} grants "
-                f"{', '.join(unknown)}, which is no {kind.rstrip('s')} action"
+                f"{path} grants {', '.join(unknown)}, which is no {kind.rstrip('s')} action"
             )
         return set(words)
 
     def _fields(self, kind, identifier):
-        """Parse the file into fields, or None when there is no file."""
-        path = self._path(kind, identifier)
+        """Parse the file into fields, or None when there is no file.
+
+        A chat with no file of its own falls back to `chats/default.conf`, so a flag the
+        user wrote there holds for every chat as well.
+        """
+        fields = self._read_fields(self._path(kind, identifier))
+        if fields is None and kind == "chats":
+            return self._read_fields(self.root / kind / f"{DEFAULT}.conf")
+        return fields
+
+    def _read_fields(self, path):
         try:
             text = path.read_text()
         except FileNotFoundError:

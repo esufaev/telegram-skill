@@ -23,6 +23,19 @@ members: 6f3a9c21b4d8
 - **`mark-read-on-reply`** makes a reply mark the chat read. A reply with no preceding read receipt is a sequence no person produces, so leaving this off is visible to the other side
 - **`members`**, on a folder, records the membership the grant was written for. An answer through a folder whose membership has moved since carries a warning. A file without it is not reported as drifted
 
+## A grant for every target
+
+`chats/default.conf` applies to every chat without a file of its own, and `folders/default.conf` to every folder without one. A target's own file replaces the default whole: the two are never merged, so a chat or folder outside a wide grant needs its own file naming what stays allowed
+
+```text
+chats/default.conf     allow: read, media
+folders/default.conf   allow: digest
+```
+
+This is the account-wide form of mail's `allow:` line with no address. It also covers targets created later, which a folder membership does not. The survey lists it under the name `default`, and every answer it decides says so, so a wide grant cannot pass for a per-target one
+
+A `members` fingerprint is never taken from a default, since membership differs for every folder. A default folder file that grants content still refuses folder edits, because the refusal follows the grant rather than the file that holds it
+
 ## Why `all` is reported wherever it is used
 
 `allow: all` grants every word in the target's table. It suits a target with no other party in it, such as the account's own saved messages, and it is a different decision from naming an action: the holder chose one word and received a table that includes deleting for everyone and forwarding out
