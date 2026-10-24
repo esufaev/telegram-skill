@@ -168,6 +168,10 @@ in
             echo "tg-agent-login: run this with sudo — it starts a transient unit" >&2
             exit 1
           fi
+          # A login left open by an earlier attempt keeps the unit name, and systemd-run
+          # refuses to start a transient unit that is still loaded
+          systemctl stop tg-agent-login.service 2>/dev/null || true
+          systemctl reset-failed tg-agent-login.service 2>/dev/null || true
           exec systemd-run --pty --wait --collect --quiet \
             --unit=tg-agent-login \
             --property=DynamicUser=yes \

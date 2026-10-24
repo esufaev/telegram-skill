@@ -14,6 +14,10 @@ Kept in the shape of [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), d
 
 - `tg-agent-login` passes its arguments through, so `sudo tg-agent-login --qr` reaches the service
 
+### Fixed
+
+- `tg-agent-login` refused with "Unit tg-agent-login.service was already loaded" when an earlier attempt still held the unit, and a closed terminal leaves that attempt running. It now stops and clears the old unit first
+
 ## 2026-10-22
 
 ### Added
