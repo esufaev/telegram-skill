@@ -60,6 +60,8 @@ def _vocabulary():
     """The permission words, printed from the tables that decide them."""
     lines = ["chat permissions:"]
     lines += [f"  {name:<16}{text}" for name, text in verbs.CHAT_ACTIONS.items()]
+    lines += ["", "account permissions (chats/default.conf alone):"]
+    lines += [f"  {name:<16}{text}" for name, text in verbs.ACCOUNT_ACTIONS.items()]
     lines += ["", "folder permissions:"]
     lines += [f"  {name:<16}{text}" for name, text in verbs.FOLDER_ACTIONS.items()]
     lines += [

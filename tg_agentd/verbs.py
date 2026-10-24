@@ -20,6 +20,12 @@ CHAT_ACTIONS = {
     "mark-read": "mark history as read, which the other side can see",
 }
 
+# Actions about the account rather than one chat. Only `chats/default.conf` may grant
+# them: a per-chat file naming one is an error, because the reach is every chat
+ACCOUNT_ACTIONS = {
+    "dialogs": "list every chat with its name and its unread count",
+}
+
 # What a folder's permission file can grant. A folder grants no write action on its chats.
 # Its membership changes without the agent asking. A message sent to a chat that joined
 # the folder yesterday cannot be taken back

@@ -80,6 +80,28 @@ class Store:
             raise UnknownAction(f"no chat action is called {action!r}")
         return self._decide("chats", chat_id, action, verbs.CHAT_ACTIONS)
 
+    def account_may(self, action):
+        """Decide an action that spans the account, by `chats/default.conf` alone.
+
+        The wildcard never grants one of these: a user who wrote `all` chose the chat
+        actions, and listing every chat is a separate decision about the whole account.
+        """
+        if action not in verbs.ACCOUNT_ACTIONS:
+            raise UnknownAction(f"no account action is called {action!r}")
+        path = self.root / "chats" / f"{DEFAULT}.conf"
+        fields = self._read_fields(path)
+        if fields is None:
+            return Decision(False, None, f"no {path} to allow {action}")
+        granted = self._words(
+            fields, path, "chats", verbs.CHAT_ACTIONS | verbs.ACCOUNT_ACTIONS
+        )
+        if action in granted:
+            return Decision(True, action, f"the default chat grant allows {action}")
+        held = ", ".join(sorted(granted)) or "nothing"
+        return Decision(
+            False, None, f"the default chat grant does not allow {action}: holds {held}"
+        )
+
     def folder_may(self, folder_id, action):
         """Decide whether this action is allowed on this folder.
 
@@ -128,7 +150,10 @@ class Store:
             name = path.stem
             try:
                 if name == DEFAULT:
-                    words = self._words(self._read_fields(path) or {}, path, kind, table)
+                    words_table = table | verbs.ACCOUNT_ACTIONS if kind == "chats" else table
+                    words = self._words(
+                        self._read_fields(path) or {}, path, kind, words_table
+                    )
                 else:
                     words = self._granted_words(kind, name, table) or set()
             except (PermissionFileError, BadIdentifier) as broken:
@@ -136,7 +161,10 @@ class Store:
                 continue
             actions = set()
             for word in words:
-                actions.update(verbs.expand(word, table))
+                if word in verbs.ACCOUNT_ACTIONS:
+                    actions.add(word)
+                else:
+                    actions.update(verbs.expand(word, table))
             held[name] = sorted(actions)
         return held
 
@@ -159,7 +187,10 @@ class Store:
         if effective is None:
             return self._no_file(kind, identifier)
         fields, path, by_default = effective
-        granted = self._words(fields, path, kind, table)
+        words_table = table
+        if by_default and kind == "chats":
+            words_table = table | verbs.ACCOUNT_ACTIONS
+        granted = self._words(fields, path, kind, words_table)
         return self._as_default(
             self._weigh(granted, action, table, kind.rstrip("s"), identifier),
             by_default,

@@ -92,6 +92,16 @@ class Handler:
                 None, action, profile.describe(await self._client.me(), private=False)
             )
 
+        # Listing every chat reaches the whole account, so only the default file grants it
+        if action == "dialogs":
+            decision = self._store.account_may("dialogs")
+            if not decision.allowed:
+                return _refused(
+                    decision.reason,
+                    "add dialogs to 'allow: ' in chats/default.conf",
+                )
+            return _allowed(decision.by, action, {"chats": await self._dialogs()})
+
         # A subscription is a stream of answers, which the socket serves through stream
         if action == "subscribe":
             return _refused("subscribe streams, so it is served by stream, not handle")
@@ -404,6 +414,26 @@ class Handler:
             await self._client.update_folder(getattr(folder, "id"), None)
             return None
         raise permissions.UnknownAction(f"no handler for {action!r}")
+
+    async def _dialogs(self):
+        """Every chat the account holds, archived ones included, marking nothing read."""
+        held = {}
+        for archived in (False, True):
+            options = {"folder": 1} if archived else {}
+            for dialog in await self._client.dialogs(**options):
+                identifier = getattr(dialog, "id", None)
+                if identifier is None:
+                    continue
+                held.setdefault(
+                    identifier,
+                    {
+                        "chat": identifier,
+                        "name": getattr(dialog, "name", ""),
+                        "unread": getattr(dialog, "unread_count", 0),
+                        "archived": archived,
+                    },
+                )
+        return list(held.values())
 
     async def _digest(self, members):
         """Unread counts for the folder's chats, read without marking anything."""

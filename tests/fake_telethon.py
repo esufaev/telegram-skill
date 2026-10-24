@@ -120,6 +120,7 @@ class FakeClient:
         self,
         messages=None,
         dialogs=None,
+        archived_dialogs=None,
         folders=None,
         topics=None,
         premium=False,
@@ -134,6 +135,7 @@ class FakeClient:
         self.full_rich = full_rich or {}
         self.messages = messages or {}
         self.dialogs = dialogs or []
+        self.archived_dialogs = archived_dialogs or []
         self.folders = folders or []
         self.topics = topics or []
         self.connected = False
@@ -249,6 +251,8 @@ class FakeClient:
 
     async def get_dialogs(self, **kwargs):
         self._record("get_dialogs", **kwargs)
+        if kwargs.get("folder") == 1:
+            return list(self.archived_dialogs)
         return list(self.dialogs)
 
     # Writing

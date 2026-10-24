@@ -136,6 +136,21 @@ EOF
   )" \
   'a folder takes its membership fingerprint from the default file, so a drift warning compares one folder with another'
 
+defect 'account/dialogs' 'tg_agentd/permissions.py' \
+  "$(
+    cat <<'EOF'
+        if action in granted:
+            return Decision(True, action, f"the default chat grant allows {action}")
+EOF
+  )" \
+  "$(
+    cat <<'EOF'
+        if True:
+            return Decision(True, action, f"the default chat grant allows {action}")
+EOF
+  )" \
+  'the whole chat list is readable without the default file granting dialogs, so the account map leaks'
+
 defect 'permission/unknown-word' 'tg_agentd/permissions.py' \
   "$(
     cat <<'EOF'

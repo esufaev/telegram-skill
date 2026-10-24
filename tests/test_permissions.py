@@ -167,3 +167,26 @@ def test_a_folder_field_does_not_come_from_the_default(store):
 def test_the_survey_lists_the_default_folder_grant(store):
     write(store, "folders", permissions.DEFAULT, "allow: digest\n")
     assert store.survey()["folders"]["default"] == ["digest"]
+
+
+def test_the_default_grant_may_list_every_chat(store):
+    write(store, "chats", permissions.DEFAULT, "allow: read, dialogs\n")
+    decision = store.account_may("dialogs")
+    assert decision.allowed
+    assert decision.by == "dialogs"
+
+
+def test_the_wildcard_does_not_grant_the_account_list(store):
+    write(store, "chats", permissions.DEFAULT, "allow: all\n")
+    assert not store.account_may("dialogs").allowed
+
+
+def test_a_per_chat_file_may_not_grant_the_account_list(store):
+    write(store, "chats", "777", "allow: dialogs\n")
+    with pytest.raises(permissions.PermissionFileError):
+        store.chat_may(777, "read")
+
+
+def test_the_survey_lists_the_account_action_under_the_default(store):
+    write(store, "chats", permissions.DEFAULT, "allow: dialogs\n")
+    assert store.survey()["chats"]["default"] == ["dialogs"]

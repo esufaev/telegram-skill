@@ -28,11 +28,13 @@ members: 6f3a9c21b4d8
 `chats/default.conf` applies to every chat without a file of its own, and `folders/default.conf` to every folder without one. A target's own file replaces the default whole: the two are never merged, so a chat or folder outside a wide grant needs its own file naming what stays allowed
 
 ```text
-chats/default.conf     allow: read, media
+chats/default.conf     allow: read, media, dialogs
 folders/default.conf   allow: digest
 ```
 
 This is the account-wide form of mail's `allow:` line with no address. It also covers targets created later, which a folder membership does not. The survey lists it under the name `default`, and every answer it decides says so, so a wide grant cannot pass for a per-target one
+
+`dialogs` is an account action rather than a chat action: it lists every chat with its name and unread count, archived chats included, and marks nothing read. Only the default chat file may grant it; a per-chat file that names it is an error, and `all` does not grant it, because the list spans the account rather than one chat
 
 A `members` fingerprint is never taken from a default, since membership differs for every folder. A default folder file that grants content still refuses folder edits, because the refusal follows the grant rather than the file that holds it
 
