@@ -94,19 +94,47 @@ EOF
 defect 'permission/default' 'tg_agentd/permissions.py' \
   "$(
     cat <<'EOF'
-        if granted is None:
+        effective = self._effective(kind, identifier)
+        if effective is None:
             return self._no_file(kind, identifier)
-        return self._weigh(granted, action, table, kind.rstrip("s"), identifier)
 EOF
   )" \
   "$(
     cat <<'EOF'
-        if granted is None:
+        effective = self._effective(kind, identifier)
+        if effective is None:
             return Decision(True, "read", "no file, allowed anyway")
-        return self._weigh(granted, action, table, kind.rstrip("s"), identifier)
 EOF
   )" \
   'every chat with no permission file is fully readable, so the whole account is open by default'
+
+defect 'permission/default-fallback' 'tg_agentd/permissions.py' \
+  "$(
+    cat <<'EOF'
+        path = self.root / kind / f"{DEFAULT}.conf"
+        fields = self._read_fields(path)
+        if fields is None:
+            return None
+        return fields, path, True
+EOF
+  )" \
+  '        return None' \
+  'a target with no file of its own ignores default.conf, so a grant the user wrote for every chat or folder reaches nothing'
+
+defect 'permission/folder-flag-from-default' 'tg_agentd/permissions.py' \
+  "$(
+    cat <<'EOF'
+        if fields is None and kind == "chats":
+            return self._read_fields(self.root / kind / f"{DEFAULT}.conf")
+EOF
+  )" \
+  "$(
+    cat <<'EOF'
+        if fields is None:
+            return self._read_fields(self.root / kind / f"{DEFAULT}.conf")
+EOF
+  )" \
+  'a folder takes its membership fingerprint from the default file, so a drift warning compares one folder with another'
 
 defect 'permission/unknown-word' 'tg_agentd/permissions.py' \
   "$(
