@@ -212,6 +212,9 @@ async def run(options):
         api_id,
         api_hash,
         device_model=options.device,
+        # Its own reconnect retries a throttling answer with no pause and then stops for
+        # good; the watch loop starts below owns reconnecting instead
+        auto_reconnect=False,
     )
     if options.login:
         # The session has to be written by the same identity that will read it, in the
@@ -234,14 +237,30 @@ async def run(options):
 
     served = server.Server(build_handler(options, account))
     inherited = server.inherited_socket()
+    if inherited is None and not options.socket:
+        raise SystemExit("tg-agentd: no socket was passed and none was named")
+    watching = asyncio.create_task(account.watch())
+    serving = asyncio.create_task(
+        served.serve_forever(sock=inherited)
+        if inherited is not None
+        else served.serve_forever(path=str(options.socket))
+    )
     try:
-        if inherited is not None:
-            await served.serve_forever(sock=inherited)
-        elif options.socket:
-            await served.serve_forever(path=str(options.socket))
-        else:
-            raise SystemExit("tg-agentd: no socket was passed and none was named")
+        done, _ = await asyncio.wait(
+            {serving, watching}, return_when=asyncio.FIRST_COMPLETED
+        )
+        if watching in done and not serving.done():
+            print(
+                "tg-agentd: Telegram stayed unreachable; exiting so that systemd "
+                "restarts the service",
+                file=sys.stderr,
+            )
+            raise SystemExit(os.EX_TEMPFAIL)
+        serving.result()
     finally:
+        for task in (watching, serving):
+            task.cancel()
+        await asyncio.gather(watching, serving, return_exceptions=True)
         await account.stop()
 
 

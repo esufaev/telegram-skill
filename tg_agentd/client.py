@@ -6,6 +6,8 @@ removes a message for everyone unless told otherwise. This wrapper exposes one m
 action the permissions name, and each states what Telethon would otherwise assume.
 """
 
+import asyncio
+
 from telethon import events, utils
 from telethon.tl.functions.account import UpdateStatusRequest
 from telethon.tl.functions.channels import GetFullChannelRequest
@@ -38,6 +40,16 @@ RICH = "rich"
 
 MARKUPS = (*PARSED, RICH)
 DEFAULT_MARKUP = "md"
+
+# How often the link is looked at, and how slowly the service comes back. The pause starts
+# at RETRY_PAUSE and doubles up to RETRY_CAP, so a long outage costs a handful of
+# connections rather than the burst that made Telegram answer a throttling page in the
+# first place. Telethon's own reconnect is off for the same reason: it retries a
+# throttling answer with no pause at all and then stops for good
+WATCH_INTERVAL = 1
+RETRY_PAUSE = 2
+RETRY_CAP = 60
+GIVE_UP_AFTER = 8
 
 
 class Client:
@@ -73,6 +85,43 @@ class Client:
 
     async def stop(self):
         await self._telethon.disconnect()
+
+    def connected(self):
+        """Whether Telegram is reachable through this session right now."""
+        return self._telethon.is_connected()
+
+    async def reconnect(self):
+        """Join Telegram again, and say the account is away once more.
+
+        A session that arrives is a session that shows its requests as activity, so the
+        offline status has to be sent again on the new connection
+        """
+        await self._telethon.connect()
+        await self._telethon(UpdateStatusRequest(offline=True))
+
+    async def watch(self):
+        """Keep the link up, and give up once the outage outlives the budget.
+
+        False means the service could not reach Telegram for the whole budget. The caller
+        ends the process on it: a restart is the only thing left that systemd can see, and
+        RestartSec becomes the pause before the next attempt
+        """
+        failures = 0
+        while True:
+            await asyncio.sleep(WATCH_INTERVAL)
+            if self.connected():
+                failures = 0
+                continue
+            try:
+                await self.reconnect()
+            except Exception:
+                failures += 1
+                if failures >= GIVE_UP_AFTER:
+                    return False
+                pause = min(RETRY_PAUSE * 2 ** (failures - 1), RETRY_CAP)
+                await asyncio.sleep(pause)
+            else:
+                failures = 0
 
     async def own_id(self):
         """The account's identifier, which is also the identifier of its saved messages."""

@@ -19,14 +19,25 @@ defect 'presence/absent' 'tg_agentd/client.py' \
   "$(
     cat <<'EOF'
         await self._telethon(UpdateStatusRequest(offline=True))
+        # The session caches each entity's access hash, and an identifier cannot be
 EOF
   )" \
-  '        pass' \
+  '        # The session caches each entity'"'"'s access hash, and an identifier cannot be' \
   'the account shows as online whenever the agent reads anything, and the user is visibly present at hours they are not'
 
 defect 'presence/inverted' 'tg_agentd/client.py' \
-  'UpdateStatusRequest(offline=True)' \
-  'UpdateStatusRequest(offline=False)' \
+  "$(
+    cat <<'EOF'
+UpdateStatusRequest(offline=True))
+        # The session caches each entity's access hash, and an identifier cannot be
+EOF
+  )" \
+  "$(
+    cat <<'EOF'
+UpdateStatusRequest(offline=False))
+        # The session caches each entity's access hash, and an identifier cannot be
+EOF
+  )" \
   'every connection announces the user as online, which is worse than the default'
 
 # Read receipts. Reading history is invisible in MTProto until a separate call is made
@@ -472,3 +483,36 @@ defect 'info/hidden' 'tg_agentd/profile.py' \
   'return {key: value for key, value in described.items() if value is not None}' \
   'return described' \
   'a phone number a person hides reads as a field that exists and is empty, rather than as one the account cannot see'
+
+# Recovery. The link to Telegram can go away for hours, and Telethon's own reconnect is
+# what turned a throttle into a storm
+defect 'recovery/unpaused' 'tg_agentd/client.py' \
+  '                pause = min(RETRY_PAUSE * 2 ** (failures - 1), RETRY_CAP)' \
+  '                pause = 0' \
+  'the service retries Telegram with no pause after every failure, which is the burst that made the link answer a throttling page'
+
+defect 'recovery/attempt' 'tg_agentd/client.py' \
+  '                await self.reconnect()' \
+  '                raise ConnectionError("refused")' \
+  'a dropped link is never picked up again, and every request answers "unreachable" until someone restarts the unit by hand'
+
+defect 'recovery/give-up' 'tg_agentd/__main__.py' \
+  '            raise SystemExit(os.EX_TEMPFAIL)' \
+  '            raise SystemExit(0)' \
+  'an outage that outlives the budget ends the service successfully, so systemd never restarts it and the agent stays deaf'
+
+defect 'recovery/telethon-retry' 'tg_agentd/__main__.py' \
+  '        auto_reconnect=False,' \
+  '        auto_reconnect=True,' \
+  'Telethon retries a throttling answer with no pause and then gives up for good, which is the deaf-but-alive service this loop exists to end'
+
+defect 'recovery/silent' 'tg_agentd/server.py' \
+  "$(
+    cat <<'SILENT'
+            except ConnectionError:
+                answer = refusal()
+SILENT
+  )" \
+  '            except FileNotFoundError:
+                answer = refusal()' \
+  'a request made while the link is down gets no answer at all, so the caller cannot tell a lost link from a request the service never read'

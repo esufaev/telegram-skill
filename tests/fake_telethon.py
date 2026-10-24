@@ -168,6 +168,9 @@ class FakeClient:
         self.connected = False
         self._record("disconnect")
 
+    def is_connected(self):
+        return self.connected
+
     async def is_user_authorized(self):
         return True
 

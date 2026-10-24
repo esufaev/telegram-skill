@@ -18,6 +18,8 @@ Kept in the shape of [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), d
 
 ### Fixed
 
+- A dropped link to Telegram is picked up again with a pause that doubles up to a minute, and an outage past the budget ends the process with a temporary-failure code, so `Restart=on-failure` brings the service back instead of it staying alive with no link. Telethon's own reconnect is off: it retried a throttling answer with no pause at all, which is what made the link answer a throttling page, and then stopped reconnecting for good
+- A request made while the link is down answers `Telegram is unreachable: the service is reconnecting` rather than a bare connection error, and a subscription that loses the link ends with that reason instead of closing with no answer
 - `tg-agent-login` refused with "Unit tg-agent-login.service was already loaded" when an earlier attempt still held the unit, and a closed terminal leaves that attempt running. It now stops and clears the old unit first
 - A client that leaves before reading its answer no longer reaches the journal as `Unhandled exception in client_connected_cb`: the failed write raised `ConnectionResetError` out of the session, and the session now ends quietly. The rejection of an oversized line owed to a peer that is already gone ends the same way
 - The refusal of an oversized line is decided by the reader alone. A `ValueError` raised anywhere else in a session, in the handler included, used to be answered as `request too large`, hiding the fault that caused it
