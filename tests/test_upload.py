@@ -133,6 +133,11 @@ class _Echo:
         return {"ok": True, "size": len(request.get("file", {}).get("data", ""))}
 
 
+class _Broken:
+    async def handle(self, request):
+        raise ValueError("the handler broke")
+
+
 def _serve_once(tmp_path, payload):
     """Send one line to a real Server over a unix socket and return its answer."""
     path = str(tmp_path / "s")
@@ -233,3 +238,41 @@ def test_a_rejection_to_a_client_that_left_ends_the_session_without_an_exception
     assert answer["ok"] is False
     assert "too large" in answer["error"]
     assert [context for context in seen if context.get("exception") is not None] == []
+
+
+def _read_until_eof(path, payload):
+    with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as client:
+        client.connect(path)
+        client.sendall(payload)
+        answer = b""
+        while True:
+            block = client.recv(65536)
+            if not block:
+                return answer
+            answer += block
+
+
+def test_a_fault_in_the_handler_is_not_answered_as_an_oversized_request(tmp_path):
+    path = str(tmp_path / "s")
+
+    async def scenario():
+        seen = []
+        loop = asyncio.get_running_loop()
+        loop.set_exception_handler(lambda _, context: seen.append(context))
+        served = asyncio.ensure_future(server.Server(_Broken()).serve_forever(path=path))
+        while not Path(path).exists():
+            await asyncio.sleep(0.01)
+        answer = await asyncio.to_thread(_read_until_eof, path, b'{"the": "request"}\n')
+        for _ in range(40):
+            if any("exception" in context for context in seen):
+                break
+            await asyncio.sleep(0.01)
+        served.cancel()
+        return seen, answer
+
+    seen, answer = asyncio.run(scenario())
+    assert b"too large" not in answer
+    faults = [
+        context["exception"] for context in seen if context.get("exception") is not None
+    ]
+    assert any(isinstance(fault, ValueError) for fault in faults)

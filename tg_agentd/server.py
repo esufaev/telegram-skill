@@ -51,24 +51,30 @@ class Server:
 
     async def _client(self, reader, writer):
         try:
-            try:
-                async for line in reader:
-                    request = await self._exchange(line, writer)
-                    if request is not None:
-                        # A subscription keeps the connection for itself until either end
-                        # leaves, so nothing after it on this connection is a request
-                        await self._stream(request, reader, writer)
-                        return
-            except ValueError:
-                # The stream raises this when a line outgrows the limit. The rest of that
-                # line is still unread, so the connection cannot continue, but the caller
-                # gets a reason instead of an empty read
-                answer = {
-                    "ok": False,
-                    "error": f"request too large: a file may be at most {MAX_FILE} bytes",
-                }
-                writer.write(json.dumps(answer).encode() + b"\n")
-                await writer.drain()
+            while True:
+                try:
+                    line = await reader.readline()
+                except ValueError:
+                    # readline raises this for one thing only: a line that outgrew the
+                    # stream's limit. It clears the buffer past that line, so the
+                    # connection cannot continue, but the caller gets a reason rather
+                    # than an empty read. A fault anywhere else is left to speak for
+                    # itself instead of arriving here as a size complaint
+                    answer = {
+                        "ok": False,
+                        "error": f"request too large: a file may be at most {MAX_FILE} bytes",
+                    }
+                    writer.write(json.dumps(answer).encode() + b"\n")
+                    await writer.drain()
+                    return
+                if not line:
+                    return
+                request = await self._exchange(line, writer)
+                if request is not None:
+                    # A subscription keeps the connection for itself until either end
+                    # leaves, so nothing after it on this connection is a request
+                    await self._stream(request, reader, writer)
+                    return
         except ConnectionError:
             # A peer that leaves without reading its answers fails the writes still owed
             # to it, reading included. The session ends there rather than at a fault, and
