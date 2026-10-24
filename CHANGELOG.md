@@ -19,6 +19,7 @@ Kept in the shape of [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), d
 ### Fixed
 
 - `tg-agent-login` refused with "Unit tg-agent-login.service was already loaded" when an earlier attempt still held the unit, and a closed terminal leaves that attempt running. It now stops and clears the old unit first
+- A client that leaves before reading its answer no longer reaches the journal as `Unhandled exception in client_connected_cb`: the failed write raised `ConnectionResetError` out of the session, and the session now ends quietly. The rejection of an oversized line owed to a peer that is already gone ends the same way
 
 ## 2026-10-22
 

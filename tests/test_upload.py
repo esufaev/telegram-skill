@@ -176,3 +176,60 @@ def test_a_request_over_the_limit_gets_an_answer_rather_than_a_closed_socket(tmp
     answer = _serve_once(tmp_path, line)
     assert answer["ok"] is False
     assert "too large" in answer["error"]
+
+
+def _ask_and_leave(path, payload):
+    """Send one request and close without reading the answer.
+
+    A threaded call, because a blocking sendall on the loop's own thread would stop
+    the server from reading — the same reason `_serve_once` serves from a thread.
+    """
+    with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as client:
+        client.connect(path)
+        try:
+            client.sendall(payload)
+        except (BrokenPipeError, ConnectionResetError):
+            pass
+        client.close()
+
+
+def _leave_without_the_answer(tmp_path, payload):
+    """Ask a real Server, close without reading the answer, then ask once more.
+
+    The loop's own exception handler is replaced for one run, so anything the session
+    emits out of turn is collected and handed back instead of reaching a journal.
+    """
+    path = str(tmp_path / "s")
+
+    async def scenario():
+        seen = []
+        loop = asyncio.get_running_loop()
+        loop.set_exception_handler(lambda _, context: seen.append(context))
+        served = asyncio.ensure_future(server.Server(_Echo()).serve_forever(path=path))
+        while not Path(path).exists():
+            await asyncio.sleep(0.01)
+        await asyncio.to_thread(_ask_and_leave, path, payload)
+        for _ in range(40):
+            if any("exception" in context for context in seen):
+                break
+            await asyncio.sleep(0.01)
+        answer = await asyncio.to_thread(_exchange, path, payload)
+        served.cancel()
+        return seen, answer
+
+    return asyncio.run(scenario())
+
+
+def test_a_client_that_leaves_before_the_answer_ends_the_session_without_an_exception(tmp_path):
+    payload = b'{"the": "request"}\n'
+    seen, answer = _leave_without_the_answer(tmp_path, payload)
+    assert answer == {"ok": True, "size": 0}
+    assert [context for context in seen if context.get("exception") is not None] == []
+
+
+def test_a_rejection_to_a_client_that_left_ends_the_session_without_an_exception(tmp_path):
+    payload = b'{"data": "' + b"A" * (server.MAX_REQUEST + 1) + b'"}\n'
+    seen, answer = _leave_without_the_answer(tmp_path, payload)
+    assert answer["ok"] is False
+    assert "too large" in answer["error"]
+    assert [context for context in seen if context.get("exception") is not None] == []
