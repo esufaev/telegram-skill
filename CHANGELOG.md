@@ -2,6 +2,18 @@
 
 Kept in the shape of [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), dated rather than numbered, and with no `Unreleased` section — a skill is read at whatever revision you have checked out, so whatever is on the default branch is what everyone already has, and a section for work that has landed but not shipped would never close. The rule lives in the [versioning](https://github.com/rokokol/versioning-skill) skill, which owns what has no version
 
+## 2026-10-24
+
+### Added
+
+- `--qr` for `--login`: sign in by scanning a QR code with a device that is already signed in, so no code goes through Telegram or SMS. A token that expires is replaced and shown again
+- The login says where Telegram sent the code and how many digits it holds: the app, SMS, a call, and the other `auth.SentCodeType` constructors
+- A flood wait names the seconds Telegram asks to wait, instead of leaving the prompt open with no code
+
+### Changed
+
+- `tg-agent-login` passes its arguments through, so `sudo tg-agent-login --qr` reaches the service
+
 ## 2026-10-22
 
 ### Added

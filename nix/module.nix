@@ -177,7 +177,7 @@ in
             ${lib.getExe cfg.package} \
               --permissions ${cfg.permissionsDir} \
               --device ${cfg.deviceName} \
-              --login
+              --login "$@"
         '';
       })
     ];

@@ -26,6 +26,16 @@ So the login runs as the service runs, through systemd, with a terminal attached
 sudo tg-agent-login
 ```
 
+The prompt names the channel Telegram chose for the code, because the account's devices decide that rather than this program: the app on a signed-in device, SMS, a call, or the login email. A code sent through the app arrives in the chat named Telegram. When Telegram refuses a request with a flood wait, the message names the seconds to wait; asking again sooner does not deliver the code and can extend the wait
+
+If the code does not arrive, sign in by QR instead:
+
+```bash
+sudo tg-agent-login --qr
+```
+
+The terminal shows a QR code and its `tg://login` link. Scan the code from Settings → Devices → Link Desktop Device in a Telegram app that is already signed in, or open the link there. No code goes through Telegram or SMS, so neither the app chat nor the flood wait is involved. A token that expires is replaced and shown again
+
 Once that has succeeded the session stays valid, and the service starts on its own. A service that finds no session exits 78 and the unit refuses to restart it, because a restart cannot supply a code that arrives on a phone
 
 The login creates a session that appears in the account's device list and sends a "new login" notice to every other device. Naming the device with `--device` is what makes that entry recognisable later, rather than an unlabelled client among the real ones

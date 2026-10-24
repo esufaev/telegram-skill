@@ -7,6 +7,7 @@ EX_CONFIG = 78
 
 import argparse
 import asyncio
+import getpass
 import os
 import sys
 from pathlib import Path
@@ -47,6 +48,11 @@ def build_parser():
         action="store_true",
         help="sign in interactively instead of serving, and exit",
     )
+    parser.add_argument(
+        "--qr",
+        action="store_true",
+        help="with --login, sign in by a QR code scanned on a signed-in device",
+    )
     return parser
 
 
@@ -82,6 +88,108 @@ def credentials():
     return api_id, api_hash
 
 
+# Where Telegram says it put the code. The names are the constructors of
+# auth.SentCodeType; a constructor this table does not know is printed as it is, because a
+# channel invented here would be worse than a name nobody recognises
+DELIVERY = {
+    "SentCodeTypeApp": "through the Telegram app on a signed-in device: open the chat named Telegram",
+    "SentCodeTypeSms": "by SMS",
+    "SentCodeTypeCall": "by a phone call that reads the code aloud",
+    "SentCodeTypeFlashCall": "by a flash call, whose number is the code",
+    "SentCodeTypeMissedCall": "by a missed call, whose last digits are the code",
+    "SentCodeTypeEmailCode": "by the login email of the account",
+    "SentCodeTypeFragmentSms": "through fragment.com",
+    "SentCodeTypeFirebaseSms": "by SMS after the app's attestation",
+    "SentCodeTypeSmsWord": "by SMS as a secret word",
+    "SentCodeTypeSmsPhrase": "by SMS as a secret phrase",
+}
+
+
+def describe_delivery(sent):
+    """Say where Telegram sent the code, since it decides that and not this program."""
+    channel = DELIVERY.get(type(sent.type).__name__, type(sent.type).__name__)
+    length = getattr(sent.type, "length", None)
+    if length:
+        return f"tg-agentd: the code went {channel} ({length} digits)"
+    return f"tg-agentd: the code went {channel}"
+
+
+def show_qr(url):
+    """Print the login link as a QR code a Telegram app can scan."""
+    import qrcode
+
+    code = qrcode.QRCode(border=1)
+    code.add_data(url)
+    code.make(fit=True)
+    code.print_ascii(invert=True)
+
+
+async def code_login(telethon):
+    """Ask for a phone and a code, and report the channel Telegram chose."""
+    from telethon import errors
+
+    phone = input("Please enter your phone (or bot token): ").strip()
+    try:
+        sent = await telethon.send_code_request(phone)
+    except errors.FloodWaitError as wait:
+        raise SystemExit(
+            f"tg-agentd: Telegram asks to wait {wait.seconds} seconds before it sends another code"
+        ) from None
+    except errors.RPCError as refused:
+        raise SystemExit(
+            f"tg-agentd: Telegram refused the code request: {type(refused).__name__}: {refused}"
+        ) from None
+    print(describe_delivery(sent))
+    code = input("Please enter the code you received: ").strip()
+    try:
+        return await telethon.sign_in(phone, code)
+    except errors.SessionPasswordNeededError:
+        raise
+    except errors.FloodWaitError as wait:
+        raise SystemExit(
+            f"tg-agentd: Telegram asks to wait {wait.seconds} seconds before another attempt"
+        ) from None
+    except errors.RPCError as refused:
+        raise SystemExit(
+            f"tg-agentd: Telegram refused the code: {type(refused).__name__}: {refused}"
+        ) from None
+
+
+async def qr_login(telethon):
+    """Show a QR code, replacing it when the token expires, until a device accepts it."""
+    qr = await telethon.qr_login()
+    while True:
+        print("tg-agentd: scan this with Telegram, or open the link on a signed-in device:")
+        print(qr.url)
+        show_qr(qr.url)
+        try:
+            return await qr.wait()
+        except asyncio.TimeoutError:
+            print("tg-agentd: the QR code expired; here is a new one")
+            await qr.recreate()
+
+
+async def login(telethon, *, by_qr):
+    """Sign the client in, by a code or by a QR code, with the password when 2FA asks."""
+    from telethon import errors
+
+    await telethon.connect()
+    if await telethon.is_user_authorized():
+        return
+    try:
+        if by_qr:
+            return await qr_login(telethon)
+        return await code_login(telethon)
+    except errors.SessionPasswordNeededError:
+        password = getpass.getpass("Please enter your password: ")
+        try:
+            return await telethon.sign_in(password=password)
+        except errors.RPCError as refused:
+            raise SystemExit(
+                f"tg-agentd: Telegram refused the password: {type(refused).__name__}: {refused}"
+            ) from None
+
+
 def build_handler(options, account):
     """The handler the service serves, assembled from its command line."""
     store = permissions.Store(options.permissions)
@@ -106,7 +214,7 @@ async def run(options):
     if options.login:
         # The session has to be written by the same identity that will read it, in the
         # same state directory, so the login runs as this service rather than beside it
-        await telethon.start()
+        await login(telethon, by_qr=options.qr)
         me = await telethon.get_me()
         print(f"tg-agentd: signed in as {getattr(me, 'username', None) or me.id}")
         await telethon.disconnect()
@@ -136,7 +244,10 @@ async def run(options):
 
 
 def main(argv=None):
-    options = build_parser().parse_args(argv)
+    parser = build_parser()
+    options = parser.parse_args(argv)
+    if options.qr and not options.login:
+        parser.error("--qr needs --login")
     try:
         asyncio.run(run(options))
     except KeyboardInterrupt:

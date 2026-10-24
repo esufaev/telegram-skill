@@ -45,6 +45,7 @@
             (python3.withPackages (ps: [
               ps.telethon
               ps.cryptg
+              ps.qrcode
               ps.pytest
             ]))
           ];

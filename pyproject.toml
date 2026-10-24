@@ -7,7 +7,7 @@ name = "tg-agentd"
 version = "0"
 description = "Serve a Telegram account over a unix socket under per-chat permissions"
 requires-python = ">=3.11"
-dependencies = ["telethon", "cryptg"]
+dependencies = ["telethon", "cryptg", "qrcode"]
 
 [project.scripts]
 tg-agentd = "tg_agentd.__main__:main"
