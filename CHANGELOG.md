@@ -8,6 +8,8 @@ Kept in the shape of [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), d
 
 - `systemd/` holds the unit, its socket, the outbox sweep, the tmpfiles rules and `tg-agent-login` as plain files, for a system with systemd and no Nix. `tests/test_units.py` holds them to the module's isolation: a dynamic user, credentials loaded by systemd, the same sandbox, no restart of a session that is not signed in, and permissions and outbox outside the state directory
 - `packaging/arch/PKGBUILD` installs the service, those units and the skill on Arch Linux
+- A message read carries its `date`, the sender's `from_name`, the message it answers as `reply_to`, where a forward came from as `forwarded_from`, and the `duration` of a voice note, a round video, a video or an audio file. A summary without them is sentences with no speaker and no time
+- A poll reads as its question, answers, counts and total, and a poll whose voters are public names who chose each answer. A round video reads as `round` rather than as a video
 
 ## 2026-10-24
 
